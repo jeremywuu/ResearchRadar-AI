@@ -6,8 +6,8 @@ ResearchRadar AI is a personal academic and industry intelligence system for tra
 - Research-oriented industry jobs and future career targets
 - Academic conferences, workshops, exhibitions, and networking events
 
-Milestone 1 provides the repository foundation only. It does not scrape live websites,
-connect to Google Sheets, call an LLM, or deploy GitHub Actions.
+Milestone 2 provides deterministic local pipelines over explicitly fictional fixtures. It does
+not scrape live websites, connect to Google Sheets, call an LLM, or deploy GitHub Actions.
 
 ## Requirements
 
@@ -38,6 +38,18 @@ The module form is equivalent:
 python -m research_radar validate-config
 ```
 
+Run all local demo pipelines, or one independently:
+
+```bash
+research-radar run-demo all --reference-date 2026-10-12
+research-radar run-demo jobs
+research-radar run-demo phd
+research-radar run-demo events
+```
+
+Outputs are written to the Git-ignored `data/demo/` directory. Use `--output-dir` to change it
+and `--project-root` when invoking the command outside the repository root.
+
 Run tests:
 
 ```bash
@@ -66,6 +78,9 @@ ruff format .
 
 Watchlist membership is not evidence of a current opening. See `docs/PRD.md` for the
 source-state distinctions that every future collector must preserve.
+
+The committed `fixtures/demo/*.json` records use fictional organizations and reserved
+`.example` domains. They are test inputs, never real opportunities.
 
 ## Documentation
 

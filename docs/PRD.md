@@ -37,6 +37,7 @@ exclude a role. Every opportunity can be classified as:
 - `CURRENT_OPPORTUNITY`
 - `EARLY_PHD_OPPORTUNITY`
 - `FUTURE_CAREER_TARGET`
+- `NEEDS_REVIEW`
 - `UNCLASSIFIED`
 
 PhD monitoring covers programs, funded vacancies, supervisors, laboratories, PI announcements,
@@ -125,6 +126,13 @@ tests, and scheduled GitHub Actions execution.
 
 The MVP excludes a frontend, database server, automatic applications, large-scale scraping,
 trained personalization models, email digests, deadline alerts, and industry trend analytics.
+
+## Milestone 2 processing boundary
+
+The local MVP slice accepts only committed, explicitly fictional JSON fixtures. It validates,
+normalizes, classifies, deduplicates, scores, ranks, and writes category JSON snapshots. This
+demonstrates the processing contract without implying any live source adapter works or any real
+opportunity is open. A `VERIFIED_OFFICIAL` fixture value tests the state model only.
 
 ## Future capabilities
 

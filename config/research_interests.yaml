@@ -15,6 +15,21 @@ primary_interests:
   - "Data science"
   - "Behavioral science"
 
+interest_weights:
+  Cognitive neuroscience: 95
+  Computational neuroscience: 100
+  Computational modeling: 100
+  Neural representations: 100
+  Decision-making: 95
+  Reinforcement learning: 100
+  Artificial intelligence: 90
+  Machine learning: 90
+  Human-AI interaction: 90
+  Brain-computer interfaces: 100
+  Neural decoding: 100
+  Data science: 60
+  Behavioral science: 80
+
 exploration_policy:
   enabled: true
   description: "Retain adjacent high-quality topics instead of narrowing all results to known interests."

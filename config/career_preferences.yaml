@@ -31,6 +31,16 @@ career_stages:
 
 include_currently_ineligible_future_roles: true
 
+target_skills:
+  - "Python"
+  - "Machine learning"
+  - "Computational modeling"
+  - "Statistics"
+  - "Neural data analysis"
+  - "Reinforcement learning"
+  - "Experimental design"
+  - "Data science"
+
 phd_target_cycles:
   - "Fall 2027"
   - "Fall 2028"

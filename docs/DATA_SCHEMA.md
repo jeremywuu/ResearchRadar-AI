@@ -48,6 +48,8 @@ opportunity_id
 title
 organization
 source_url
+source_urls
+identity_key
 first_seen_at
 last_seen_at
 source_verification_status
@@ -59,12 +61,20 @@ working_language?
 english_compatibility
 deadline?
 review_flags
+original_values
+country?
+region?
+research_areas
 ```
 
 ## IndustryJob
 
 ```text
 job_family?
+official_job_id?
+job_category?
+research_orientation
+education_requirement
 seniority?
 degree_requirement?
 skills
@@ -79,6 +89,11 @@ total_compensation_max?
 currency?
 salary_period?
 compensation_source?
+compensation_source_url?
+original_salary_text?
+annualized_base_salary_min?
+annualized_base_salary_max?
+salary_flags
 compensation_disclosure_status
 ```
 
@@ -93,15 +108,21 @@ laboratory?
 target_cycle?
 funding_status?
 admission_url?
+official_opportunity_id?
+opportunity_type
 ```
 
 ## AcademicEvent
 
 ```text
 event_type?
+academic_event_type
+series_name?
+edition_year?
 starts_on?
 ends_on?
 submission_deadline?
+registration_deadline?
 event_url?
 ```
 
@@ -118,6 +139,17 @@ notes?
 ```
 
 `saved` does not change relevance. `hidden` never deletes the opportunity or its history.
+
+## Processed output
+
+Each category JSON snapshot contains a pipeline summary and a list of processed records. Every
+record contains the normalized opportunity, score components and weights, final score,
+personalized score, rank, exclusion state, processing status, and optional feedback. On rewrite,
+the JSON adapter preserves the earliest first-seen timestamp and existing feedback when the new
+input has no feedback. Generated snapshots live under Git-ignored `data/`.
+
+Unknown source facts remain `null`; review flags identify actionable unknowns. The complete raw
+fictional input is retained in `original_values`, while normalized values occupy typed fields.
 
 ## Planned Google Sheets tabs
 

@@ -106,6 +106,13 @@ def load_research_interests(path: Path) -> dict[str, Any]:
         or not all(isinstance(value, str) and value.strip() for value in interests)
     ):
         raise ConfigValidationError(f"{path}: primary_interests must be non-empty strings")
+    weights = data.get("interest_weights")
+    if not isinstance(weights, dict) or set(weights) != set(interests):
+        raise ConfigValidationError(
+            f"{path}: interest_weights must contain every primary interest exactly once"
+        )
+    if not all(isinstance(value, int) and 0 <= value <= 100 for value in weights.values()):
+        raise ConfigValidationError(f"{path}: interest weights must be integers from 0 to 100")
     return data
 
 
@@ -124,6 +131,7 @@ def load_career_preferences(path: Path) -> dict[str, Any]:
         raise ConfigValidationError(f"{path}: missing fields: {', '.join(missing)}")
     _load_non_empty_string_list(path, "geographic_scope")
     _load_non_empty_string_list(path, "phd_target_cycles")
+    _load_non_empty_string_list(path, "target_skills")
     return data
 
 

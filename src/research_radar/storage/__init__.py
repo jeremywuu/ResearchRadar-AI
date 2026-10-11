@@ -1,1 +1,5 @@
-"""Persistence adapters; Google Sheets arrives in a later milestone."""
+"""Local storage adapters."""
+
+from research_radar.storage.json_store import JsonOutputStore
+
+__all__ = ["JsonOutputStore"]

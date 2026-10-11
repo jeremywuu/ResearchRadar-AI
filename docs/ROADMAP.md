@@ -11,7 +11,7 @@ Status: complete.
 
 ## Milestone 1 — Repository foundation
 
-Status: active.
+Status: complete.
 
 - Initialize the local Git repository without a remote.
 - Add product, architecture, roadmap, and schema documentation.
@@ -31,17 +31,28 @@ Acceptance criteria:
 
 ## Milestone 2 — Local deterministic pipelines
 
+Status: complete.
+
 - Implement PhD, job, and event pipelines against synthetic fixtures.
 - Add normalization, exact deduplication, classification, and explainable scoring.
 - Verify one pipeline's failure cannot prevent the other two from completing.
-- Keep all execution offline and storage in memory.
+- Keep all execution offline and write structured snapshots to ignored local JSON files.
+
+Acceptance criteria:
+
+- All categories run together or independently through the CLI.
+- Malformed records are reported without fabricating missing facts.
+- Strong category identities deduplicate sources while preserving annual editions and cycles.
+- Salary handling preserves disclosures and uses neutral treatment when salary is unavailable.
+- Feedback, saved, hidden, first-seen, last-seen, and source attribution survive local updates.
+- Synthetic tests, configuration validation, pytest, and Ruff pass locally.
 
 ## Milestone 3 — Google Sheets synchronization
 
 - Create the workbook schema.
 - Add idempotent synchronization and append-only history.
 - Protect user-owned feedback, saved, hidden, notes, and priority fields.
-- Add an in-memory storage adapter for tests.
+- Reuse the pipeline/storage seam established by the local JSON adapter.
 
 ## Milestone 4 — Initial official-source adapters
 

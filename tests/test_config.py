@@ -5,6 +5,7 @@ import pytest
 from research_radar.config import (
     ConfigValidationError,
     load_all_configs,
+    load_research_interests,
     load_watchlist,
     load_yaml,
 )
@@ -80,3 +81,14 @@ def test_project_watchlist_priorities_are_valid() -> None:
 
     assert targets
     assert {target.priority for target in targets} <= {Priority.P0, Priority.P1}
+
+
+def test_research_interest_weights_must_be_complete_and_bounded(tmp_path: Path) -> None:
+    path = tmp_path / "research_interests.yaml"
+    path.write_text(
+        "version: 1\nprimary_interests: [AI, BCI]\ninterest_weights: {AI: 101}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigValidationError, match="every primary interest"):
+        load_research_interests(path)
