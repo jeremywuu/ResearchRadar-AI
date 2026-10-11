@@ -151,15 +151,160 @@ input has no feedback. Generated snapshots live under Git-ignored `data/`.
 Unknown source facts remain `null`; review flags identify actionable unknowns. The complete raw
 fictional input is retained in `original_values`, while normalized values occupy typed fields.
 
-## Planned Google Sheets tabs
+## Google Sheets ownership
 
-- `Opportunities`: canonical current records and protected user fields
-- `Organizations`: normalized watchlist organizations
-- `Sources`: source verification and adapter health
-- `OpportunityHistory`: append-only changed snapshots
-- `FeedbackLog`: preference, bookmark, and visibility changes
-- `Runs`: per-category and aggregate execution outcomes and cost
-- `Errors`: structured recoverable and terminal failures
-- `Dashboard`: formulas and pivots only
+Opportunity facts, classifications, scores, URLs, verification timestamps, and statuses are
+agent-managed. Preference, saved, hidden, and personal notes are user-managed. Opportunity-sheet
+plans never contain user-managed columns. `My_Feedback` is the canonical feedback source and is
+joined to opportunities by `Record_ID`; its rows survive opportunity status changes or absence.
 
-The exact column mapping is finalized in Milestone 3 before the Sheets adapter is implemented.
+`config/watchlist.yaml` remains authoritative. `Watchlist` is an agent-managed, read-only mirror.
+Bidirectional editing may be added later only with an explicit conflict-resolution policy and a
+single declared authority per field.
+
+All headers are validated exactly before writes. All untrusted values use RAW input semantics.
+Blank cells represent unknown facts; no missing value is invented.
+
+## Worksheet schemas
+
+### Industry_Jobs
+
+```text
+Record_ID
+Job_Title
+Company
+Location
+Country
+Research_Domain
+Research_Orientation
+Education_Requirement
+Career_Stage
+Working_Language
+Required_Skills
+Research_Relevance
+PhD_Leverage
+Skills_Career_Fit
+Compensation_Score
+Overall_Priority_Score
+Original_Salary
+Salary_Currency
+Salary_Disclosure_Status
+Source_URL
+First_Seen
+Last_Seen
+Opportunity_Status
+```
+
+### PhD_Opportunities
+
+```text
+Record_ID
+University
+Program_or_Position
+Research_Area
+PI_Supervisor
+Country
+Admission_Cycle
+Recruitment_Status
+Funding_Status
+Application_Deadline
+Research_Fit_Score
+Official_URL
+First_Seen
+Last_Seen
+```
+
+### Events
+
+```text
+Record_ID
+Event_Name
+Event_Type
+Edition_Year
+Country
+City
+Start_Date
+End_Date
+Submission_Deadline
+Registration_Deadline
+Research_Relevance
+Priority_Score
+Official_URL
+First_Seen
+Last_Seen
+```
+
+### Watchlist
+
+```text
+Record_ID
+Organization
+Category
+Country_or_Region
+Priority
+Research_Focus
+Official_Website
+Monitoring_URL
+Source_Type
+Monitoring_Status
+Adapter_Status
+```
+
+### My_Feedback
+
+```text
+Record_ID
+Preference       # Very Interested, Interested, Not Relevant, or blank
+Saved            # independent Boolean
+Hidden           # independent Boolean
+Personal_Notes
+Updated_At       # timezone-aware ISO timestamp
+```
+
+Duplicate feedback IDs are conflicts. Invalid preference, Boolean, or timestamp values are
+reported and not loaded. Automated synchronization never updates these user-managed fields.
+
+### Run_Logs
+
+```text
+Record_ID        # deterministic from Run_ID and category
+Run_ID
+Timestamp
+Pipeline_Category
+Execution_Status
+Processed_Count
+Inserted_Count
+Updated_Count
+Unchanged_Count
+Error_Count
+Error_Summary
+```
+
+### Change_Log
+
+```text
+Record_ID        # same value as Event_ID
+Event_ID
+Run_ID
+Timestamp
+Pipeline_Category
+Opportunity_Record_ID
+Change_Type      # NEW_OPPORTUNITY, UPDATED_OPPORTUNITY, STATUS_CHANGE,
+                 # DEADLINE_CHANGE, or SALARY_CHANGE
+Field_Name
+Previous_Value
+New_Value
+```
+
+`Event_ID` is derived from category, opportunity ID, change type, field, old value, and new value.
+The append adapter ignores an already-present event ID, making retries idempotent.
+
+## Synchronization rules
+
+- Rebuild `Record_ID` to row-number mappings from every current worksheet read.
+- Duplicate current or desired IDs are conflicts; never choose a winner silently.
+- Preserve the sheet's existing `First_Seen`; update only changed agent-managed cells.
+- Do not rewrite unchanged rows, delete rows, or close records missing from one run.
+- Batch inserts, targeted updates, and append-only logs separately.
+- A dry-run returns the complete plan and performs no adapter writes.
+- An affected-sheet schema/conflict failure does not prevent other categories from syncing.

@@ -24,6 +24,28 @@ def run_demo(
     observed_at: datetime | None = None,
     reference_date: date | None = None,
 ) -> ExecutionReport:
+    execution = process_demo(
+        categories,
+        project_root=project_root,
+        observed_at=observed_at,
+        reference_date=reference_date,
+    )
+    store = JsonOutputStore(output_dir)
+    for report in execution.pipelines.values():
+        if report.failure is None:
+            store.write(report)
+    return execution
+
+
+def process_demo(
+    categories: tuple[str, ...],
+    *,
+    project_root: Path,
+    observed_at: datetime | None = None,
+    reference_date: date | None = None,
+) -> ExecutionReport:
+    """Process fictional fixtures without writing local or external storage."""
+
     observed_at = observed_at or datetime.now(UTC)
     reference_date = reference_date or observed_at.date()
     config_dir = project_root / "config"
@@ -46,9 +68,4 @@ def run_demo(
             reference_date=reference_date,
         ),
     }
-    execution = run_independent_pipelines({name: tasks[name] for name in categories})
-    store = JsonOutputStore(output_dir)
-    for report in execution.pipelines.values():
-        if report.failure is None:
-            store.write(report)
-    return execution
+    return run_independent_pipelines({name: tasks[name] for name in categories})

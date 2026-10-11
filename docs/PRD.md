@@ -134,6 +134,17 @@ normalizes, classifies, deduplicates, scores, ranks, and writes category JSON sn
 demonstrates the processing contract without implying any live source adapter works or any real
 opportunity is open. A `VERIFIED_OFFICIAL` fixture value tests the state model only.
 
+## Milestone 3A synchronization boundary
+
+Milestone 3A defines and tests Google Sheets behavior entirely offline. `Industry_Jobs`,
+`PhD_Opportunities`, `Events`, `Watchlist`, `Run_Logs`, and `Change_Log` are agent-managed.
+`My_Feedback` is user-managed and canonical for preference, saved, hidden, and personal notes.
+
+The synchronizer matches only by stable `Record_ID`, rebuilds row mappings after manual sorting,
+and never replaces a whole worksheet. It does not delete absent records or infer that they closed.
+Header drift and duplicate IDs are integrity failures. Untrusted external text must use literal
+RAW writes. Live credentials and Google API calls are deferred to Milestone 3B.
+
 ## Future capabilities
 
 - PhD career intelligence

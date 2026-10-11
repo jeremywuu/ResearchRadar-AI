@@ -6,8 +6,8 @@ ResearchRadar AI is a personal academic and industry intelligence system for tra
 - Research-oriented industry jobs and future career targets
 - Academic conferences, workshops, exhibitions, and networking events
 
-Milestone 2 provides deterministic local pipelines over explicitly fictional fixtures. It does
-not scrape live websites, connect to Google Sheets, call an LLM, or deploy GitHub Actions.
+Milestone 3A adds an offline Google Sheets synchronization planner over explicitly fictional
+fixtures. It does not call Google APIs, scrape websites, call an LLM, or deploy GitHub Actions.
 
 ## Requirements
 
@@ -49,6 +49,15 @@ research-radar run-demo events
 
 Outputs are written to the Git-ignored `data/demo/` directory. Use `--output-dir` to change it
 and `--project-root` when invoking the command outside the repository root.
+
+Preview an offline synchronization against a mock, manually sorted workbook:
+
+```bash
+research-radar sheets-plan --demo --reference-date 2026-10-12
+```
+
+This is always a dry-run. It prints inserts, targeted updates, unchanged records, invalid rows,
+conflicts, and estimated opportunity-sheet operations without writing any worksheet.
 
 Run tests:
 

@@ -69,8 +69,44 @@ Preference feedback creates a separate personalized score. `saved` does not alte
 ## Seams and adapters
 
 Future collectors will satisfy a shared collector interface only after at least two concrete
-source mechanisms exist. `JsonOutputStore` is separate from processing, so a later Google Sheets
-adapter does not change the pipelines. Ranking and normalization remain deterministic modules.
+source mechanisms exist. Storage is separated from processing. `JsonOutputStore` handles local
+snapshots, while the `SheetsAdapter` interface defines worksheet reads, planned writes, and
+append-only logs. `InMemorySheetsAdapter` supplies the offline implementation; Milestone 3B can
+add a Google API adapter without changing pipeline or planner behavior.
+
+## Offline Sheets synchronization
+
+```text
+PipelineReport ─► user-facing row mapper ─► sync planner ─► SheetSyncPlan
+                                                    │
+current worksheet ─► validate headers + rebuild ID map
+                                                    │
+                      dry-run ◄─────────────────────┤
+                                                    ▼
+                                  SheetsAdapter.apply_plan
+                                  ├── targeted batch inserts
+                                  ├── targeted batch updates
+                                  ├── unique Change_Log append
+                                  └── unique Run_Logs append
+```
+
+The planner is pure: it reads current rows and returns inserts, updates, unchanged IDs, invalid
+records, conflicts, change events, and an operation estimate. It never relies on row order.
+Duplicate IDs or header drift prevent writes for that sheet. Missing input records cause no
+deletion or status change. `First_Seen` is never overwritten; `Last_Seen` follows processed
+evidence.
+
+Opportunity sheets contain only agent-managed columns. `My_Feedback` is the canonical source for
+preference, saved, hidden, and personal notes. Feedback is loaded into `UserFeedback` for later
+personalization but is never included in an opportunity-sheet write plan.
+
+All untrusted cell values are planned with Google Sheets `valueInputOption=RAW`. A future live
+adapter must preserve this invariant so strings beginning with formula characters remain literal
+data. Writes are batched by insert, update, and append type; whole-sheet replacement is forbidden.
+
+Change event IDs are deterministic over category, record, change type, field, old value, and new
+value. Retrying the same plan therefore does not duplicate `Change_Log` rows. Run log IDs combine
+run ID and category. Category planning/apply failures are isolated from sibling categories.
 
 ## Configuration
 
@@ -97,4 +133,4 @@ schedule:
 - Secrets are supplied through environment variables locally and GitHub Secrets later.
 - `.env`, credentials, tokens, private keys, local data, and logs are ignored by Git.
 - Logs must not include credentials or raw secret-bearing responses.
-- Milestone 2 requires no API keys.
+- Milestone 3A requires no API keys or network access.

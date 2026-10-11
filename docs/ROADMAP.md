@@ -47,12 +47,30 @@ Acceptance criteria:
 - Feedback, saved, hidden, first-seen, last-seen, and source attribution survive local updates.
 - Synthetic tests, configuration validation, pytest, and Ruff pass locally.
 
-## Milestone 3 — Google Sheets synchronization
+## Milestone 3A — Google Sheets synchronization: offline foundation
 
-- Create the workbook schema.
-- Add idempotent synchronization and append-only history.
-- Protect user-owned feedback, saved, hidden, notes, and priority fields.
-- Reuse the pipeline/storage seam established by the local JSON adapter.
+Status: complete.
+
+- Define seven explicit worksheet schemas and field ownership.
+- Add dry-run, idempotent upsert planning and an in-memory Sheets adapter.
+- Protect canonical feedback, saved, hidden, and personal notes.
+- Add stable run/change logs, RAW cell writes, conflict detection, and category isolation.
+
+Acceptance criteria:
+
+- Manually sorted rows are matched by stable Record ID, not row position.
+- Inserts, targeted updates, unchanged records, invalid records, and conflicts are reported.
+- Duplicate IDs and invalid headers stop writes to the affected sheet.
+- Dry-run performs no writes; retrying a plan creates no duplicate records or change events.
+- Missing opportunities are neither deleted nor automatically closed.
+- Feedback round-trips without changing research scores or losing user notes.
+- Synthetic tests, configuration validation, pytest, and Ruff pass locally.
+
+## Milestone 3B — Live Google Sheets adapter
+
+- Add Google authentication and the concrete API adapter after explicit approval.
+- Create or validate a real workbook and issue targeted RAW batch operations.
+- Verify quotas, retries, permission errors, and partial-write recovery against a test spreadsheet.
 
 ## Milestone 4 — Initial official-source adapters
 
