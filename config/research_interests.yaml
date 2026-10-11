@@ -1,0 +1,20 @@
+version: 1
+
+primary_interests:
+  - "Cognitive neuroscience"
+  - "Computational neuroscience"
+  - "Computational modeling"
+  - "Neural representations"
+  - "Decision-making"
+  - "Reinforcement learning"
+  - "Artificial intelligence"
+  - "Machine learning"
+  - "Human-AI interaction"
+  - "Brain-computer interfaces"
+  - "Neural decoding"
+  - "Data science"
+  - "Behavioral science"
+
+exploration_policy:
+  enabled: true
+  description: "Retain adjacent high-quality topics instead of narrowing all results to known interests."

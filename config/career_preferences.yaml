@@ -1,0 +1,36 @@
+version: 1
+
+job_ranking_priorities:
+  - "research_relevance"
+  - "phd_level_research_value"
+  - "skills_and_career_fit"
+  - "higher_compensation"
+  - "personal_feedback"
+
+geographic_scope:
+  - "Europe"
+  - "United States"
+  - "Canada"
+  - "Australia"
+
+english_work_environment:
+  required_for_jobs: true
+  unknown_language_policy: "flag_for_review"
+
+job_geography:
+  use_proximity_to_belgium: false
+
+event_geography:
+  prioritize_europe: true
+  retain_important_international_events: true
+
+career_stages:
+  - "CURRENT_OPPORTUNITY"
+  - "EARLY_PHD_OPPORTUNITY"
+  - "FUTURE_CAREER_TARGET"
+
+include_currently_ineligible_future_roles: true
+
+phd_target_cycles:
+  - "Fall 2027"
+  - "Fall 2028"

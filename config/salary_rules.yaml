@@ -1,0 +1,42 @@
+version: 1
+
+industry_job_scoring_weights:
+  research_relevance: 45
+  phd_level_research_value: 25
+  skills_and_career_fit: 20
+  compensation: 10
+
+disclosure:
+  preserve_original_text: true
+  preserve_source_url: true
+  missing_value_status: "NOT_DISCLOSED"
+  never_infer_missing_compensation: true
+  compare_base_with_total_compensation: false
+
+percentile_benchmarking:
+  enabled_for_mvp: false
+  later_phase_only: true
+  minimum_comparable_sample_size: 20
+  insufficient_data_status: "INSUFFICIENT_COMPARISON_DATA"
+
+aspirational_base_salary_thresholds:
+  US: {currency: "USD", annual_base: 150000}
+  CA: {currency: "CAD", annual_base: 130000}
+  EURO_AREA: {currency: "EUR", annual_base: 75000}
+  UK: {currency: "GBP", annual_base: 70000}
+  AU: {currency: "AUD", annual_base: 140000}
+
+threshold_policy:
+  attention_flags_only: true
+  exclusionary: false
+  apply_to: "annualized_base_salary"
+  missing_salary_relevance_penalty: false
+
+feedback:
+  preference_values:
+    - "VERY_INTERESTED"
+    - "INTERESTED"
+    - "NOT_RELEVANT"
+  saved_changes_relevance_score: false
+  hide_changes_relevance_score: false
+  hide_controls_visibility_only: true

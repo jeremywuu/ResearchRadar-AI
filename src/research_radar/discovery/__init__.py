@@ -1,0 +1,1 @@
+"""Category-specific discovery pipelines."""

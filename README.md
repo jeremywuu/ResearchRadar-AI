@@ -1,0 +1,75 @@
+# ResearchRadar AI
+
+ResearchRadar AI is a personal academic and industry intelligence system for tracking:
+
+- PhD programs, funded positions, supervisors, laboratories, and recruitment signals
+- Research-oriented industry jobs and future career targets
+- Academic conferences, workshops, exhibitions, and networking events
+
+Milestone 1 provides the repository foundation only. It does not scrape live websites,
+connect to Google Sheets, call an LLM, or deploy GitHub Actions.
+
+## Requirements
+
+- Python 3.11+
+- Git
+
+## Local setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
+```
+
+No API keys are required. `.env.example` is intentionally empty for this milestone.
+
+## Commands
+
+Validate all YAML configuration with PyYAML and the project schema:
+
+```bash
+research-radar validate-config
+```
+
+The module form is equivalent:
+
+```bash
+python -m research_radar validate-config
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+Run lint checks and formatting verification:
+
+```bash
+ruff check .
+ruff format --check .
+```
+
+Apply formatting when intentionally changing code:
+
+```bash
+ruff format .
+```
+
+## Configuration
+
+- `config/watchlist.yaml`: organizations, laboratories, programs, and events
+- `config/research_interests.yaml`: research interests and exploration policy
+- `config/career_preferences.yaml`: geography, career stage, language, and timing preferences
+- `config/salary_rules.yaml`: job scoring weights and aspirational compensation flags
+
+Watchlist membership is not evidence of a current opening. See `docs/PRD.md` for the
+source-state distinctions that every future collector must preserve.
+
+## Documentation
+
+- Product requirements: `docs/PRD.md`
+- Architecture: `docs/ARCHITECTURE.md`
+- Roadmap and acceptance criteria: `docs/ROADMAP.md`
+- Domain and Google Sheets schema: `docs/DATA_SCHEMA.md`
