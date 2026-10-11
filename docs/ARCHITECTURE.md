@@ -33,7 +33,7 @@ processing modules but not run success state.
 - `deduplication`: resolves exact identities and flags uncertain matches.
 - `scoring`: deterministic, explainable category scoring.
 - `personalization`: applies preference feedback and visibility policy.
-- `storage`: local JSON snapshots now; a Google Sheets adapter arrives later.
+- `storage`: local JSON snapshots, offline Sheets planning, and the live Google API adapter.
 - `scheduling`: run modes and independent category execution.
 
 Each category follows the same public stages while retaining category-specific normalization,
@@ -71,8 +71,9 @@ Preference feedback creates a separate personalized score. `saved` does not alte
 Future collectors will satisfy a shared collector interface only after at least two concrete
 source mechanisms exist. Storage is separated from processing. `JsonOutputStore` handles local
 snapshots, while the `SheetsAdapter` interface defines worksheet reads, planned writes, and
-append-only logs. `InMemorySheetsAdapter` supplies the offline implementation; Milestone 3B can
-add a Google API adapter without changing pipeline or planner behavior.
+append-only logs. `InMemorySheetsAdapter` supplies the offline implementation.
+`GoogleSheetsAdapter` implements the same seam with the official API client without changing
+pipeline or planner behavior.
 
 ## Offline Sheets synchronization
 
@@ -100,9 +101,30 @@ Opportunity sheets contain only agent-managed columns. `My_Feedback` is the cano
 preference, saved, hidden, and personal notes. Feedback is loaded into `UserFeedback` for later
 personalization but is never included in an opportunity-sheet write plan.
 
-All untrusted cell values are planned with Google Sheets `valueInputOption=RAW`. A future live
-adapter must preserve this invariant so strings beginning with formula characters remain literal
-data. Writes are batched by insert, update, and append type; whole-sheet replacement is forbidden.
+All untrusted cell values use Google Sheets `valueInputOption=RAW`, so strings beginning with
+formula characters remain literal data. Writes are batched by insert, update, and append type;
+whole-sheet replacement is forbidden.
+
+## Live Sheets adapter
+
+`GoogleSheetsAdapter` discovers credentials through a separate authentication provider, scopes
+access to the Sheets API, and opens only the spreadsheet named by `GOOGLE_SPREADSHEET_ID`.
+Application Default Credentials are preferred; installed-app OAuth is an explicit local fallback.
+Credential objects and configured credential paths are never logged.
+
+Initialization validates workbook metadata and exact headers before creating only missing
+approved worksheets. One structural batch adds headers, frozen rows, filters, basic formats, and
+feedback validation. Existing worksheets and rows are never replaced or deleted.
+
+Before an update, the adapter rereads the worksheet and confirms every planned row still contains
+the expected `Record_ID`. A sort or edit between plan and write fails safely. Inserts are rechecked
+against current IDs, logs use deterministic IDs, and transient 429/5xx/network failures use
+bounded exponential backoff. Multiple API requests are not transactional: a data write can
+succeed before a later log append fails, so partial success is reported accurately.
+
+`RESEARCH_RADAR_SHEETS_ENV=test` is required for synthetic demo writes. Production mode refuses
+demo writes. Modifying CLI commands also require explicit `--apply`; dry-run and status do not
+write.
 
 Change event IDs are deterministic over category, record, change type, field, old value, and new
 value. Retrying the same plan therefore does not duplicate `Change_Log` rows. Run log IDs combine
@@ -133,4 +155,6 @@ schedule:
 - Secrets are supplied through environment variables locally and GitHub Secrets later.
 - `.env`, credentials, tokens, private keys, local data, and logs are ignored by Git.
 - Logs must not include credentials or raw secret-bearing responses.
-- Milestone 3A requires no API keys or network access.
+- Ordinary tests inject mock services and require no Google credentials or network access.
+- Future GitHub Actions authentication will use Workload Identity Federation rather than
+  committed service-account keys.

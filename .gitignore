@@ -23,6 +23,8 @@ venv/
 *.p12
 *.pfx
 credentials*.json
+client_secret*.json
+*oauth*credentials*.json
 service-account*.json
 token*.json
 secrets*.yaml

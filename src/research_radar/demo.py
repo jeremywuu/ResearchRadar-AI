@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from research_radar.collectors import load_fixture_records
-from research_radar.models import ExecutionReport
+from research_radar.models import ExecutionReport, UserFeedback
 from research_radar.pipelines import (
     run_events_pipeline,
     run_independent_pipelines,
@@ -43,6 +43,7 @@ def process_demo(
     project_root: Path,
     observed_at: datetime | None = None,
     reference_date: date | None = None,
+    feedback_by_id: dict[str, UserFeedback] | None = None,
 ) -> ExecutionReport:
     """Process fictional fixtures without writing local or external storage."""
 
@@ -55,17 +56,20 @@ def process_demo(
             load_fixture_records(fixture_dir / "jobs.json"),
             config_dir=config_dir,
             observed_at=observed_at,
+            feedback_by_id=feedback_by_id,
         ),
         "phd": lambda: run_phd_pipeline(
             load_fixture_records(fixture_dir / "phd.json"),
             config_dir=config_dir,
             observed_at=observed_at,
+            feedback_by_id=feedback_by_id,
         ),
         "events": lambda: run_events_pipeline(
             load_fixture_records(fixture_dir / "events.json"),
             config_dir=config_dir,
             observed_at=observed_at,
             reference_date=reference_date,
+            feedback_by_id=feedback_by_id,
         ),
     }
     return run_independent_pipelines({name: tasks[name] for name in categories})

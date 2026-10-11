@@ -233,6 +233,54 @@ def test_feedback_load_preserves_independent_user_fields_and_notes() -> None:
     assert adapter.read_worksheet("My_Feedback").rows == [feedback_row]
 
 
+def test_feedback_load_ignores_1999_blank_checkbox_template_rows() -> None:
+    template_row = {
+        "Record_ID": "",
+        "Preference": "",
+        "Saved": False,
+        "Hidden": False,
+        "Personal_Notes": "",
+        "Updated_At": "",
+    }
+    adapter = InMemorySheetsAdapter({"My_Feedback": [template_row] * 1999})
+
+    result = load_feedback(adapter)
+
+    assert result.feedback_by_id == {}
+    assert result.invalid_records == []
+    assert result.conflicts == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("Preference", "Interested"),
+        ("Saved", True),
+        ("Hidden", True),
+        ("Personal_Notes", "Needs an ID"),
+        ("Updated_At", NOW.isoformat()),
+    ],
+)
+def test_feedback_without_record_id_but_with_meaningful_input_is_invalid(
+    field: str, value: object
+) -> None:
+    row = {
+        "Record_ID": "",
+        "Preference": "",
+        "Saved": False,
+        "Hidden": False,
+        "Personal_Notes": "",
+        "Updated_At": "",
+    }
+    row[field] = value
+
+    result = load_feedback(InMemorySheetsAdapter({"My_Feedback": [row]}))
+
+    assert result.feedback_by_id == {}
+    assert len(result.invalid_records) == 1
+    assert "Record_ID is required" in result.invalid_records[0].message
+
+
 def test_duplicate_feedback_ids_are_conflicts_not_silent_overwrites() -> None:
     row = {
         "Record_ID": "job_feedback",
@@ -358,6 +406,28 @@ def test_loaded_feedback_can_be_applied_without_changing_base_relevance() -> Non
     assert second.records[0].feedback.saved is True
     assert second.records[0].feedback.hidden is True
     assert second.records[0].rank is None
+
+
+def test_salary_and_status_updates_create_specific_change_events() -> None:
+    existing = job_row("job_change")
+    existing["Original_Salary"] = "USD 140,000"
+    existing["Opportunity_Status"] = "Open"
+    desired = deepcopy(existing)
+    desired["Original_Salary"] = "USD 155,000"
+    desired["Opportunity_Status"] = "Closed"
+
+    plan = plan_sheet_sync(
+        INDUSTRY_JOBS_SCHEMA,
+        [desired],
+        WorksheetData(headers=INDUSTRY_JOBS_SCHEMA.headers, rows=[existing]),
+        run_id="run_changes",
+        timestamp=NOW,
+    )
+
+    assert {(row["Change_Type"], row["Field_Name"]) for row in plan.change_log_rows} == {
+        ("SALARY_CHANGE", "Original_Salary"),
+        ("STATUS_CHANGE", "Opportunity_Status"),
+    }
 
 
 def test_declared_feedback_and_log_schemas_are_explicit() -> None:

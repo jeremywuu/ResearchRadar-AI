@@ -68,9 +68,30 @@ Acceptance criteria:
 
 ## Milestone 3B — Live Google Sheets adapter
 
+Status: complete.
+
 - Add Google authentication and the concrete API adapter after explicit approval.
 - Create or validate a real workbook and issue targeted RAW batch operations.
 - Verify quotas, retries, permission errors, and partial-write recovery against a test spreadsheet.
+
+Acceptance criteria:
+
+- Mocked tests cover authentication errors, initialization, retries, targeted RAW writes,
+  sorting races, feedback preservation, and read-only status without credentials.
+- Live commands use only `GOOGLE_SPREADSHEET_ID`; writes require explicit `--apply`.
+- Synthetic writes are refused unless `RESEARCH_RADAR_SHEETS_ENV=test`.
+- Authentication, reviewed dry-runs, first TEST writes, repeated sync, and feedback round-trip are
+  verified before the milestone commit is created.
+
+Completion evidence:
+
+- The dedicated TEST spreadsheet accepted 9 jobs, 6 PhD opportunities, 6 events, and 38
+  watchlist targets with unique stable IDs and preserved source URLs.
+- Repeated live synchronization inserted no duplicates, preserved `First_Seen`, and produced
+  unique change events for intentional `Last_Seen` observation updates.
+- A synthetic job feedback row survived synchronization with preference, saved, hidden, and notes
+  intact while its base research relevance remained unchanged.
+- All seven schemas and the opt-in read-only live integration test passed.
 
 ## Milestone 4 — Initial official-source adapters
 

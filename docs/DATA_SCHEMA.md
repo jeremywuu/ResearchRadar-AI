@@ -165,6 +165,11 @@ single declared authority per field.
 All headers are validated exactly before writes. All untrusted values use RAW input semantics.
 Blank cells represent unknown facts; no missing value is invented.
 
+The live adapter rereads headers and the `Record_ID` row mapping immediately before applying a
+plan. Existing agent-managed fields may be updated, but `First_Seen` is immutable and absent
+incoming records are neither deleted nor marked closed. `Last_Seen` changes only when processing
+input contains a newer observation. Google Sheets row positions are not identities.
+
 ## Worksheet schemas
 
 ### Industry_Jobs
@@ -263,6 +268,9 @@ Updated_At       # timezone-aware ISO timestamp
 
 Duplicate feedback IDs are conflicts. Invalid preference, Boolean, or timestamp values are
 reported and not loaded. Automated synchronization never updates these user-managed fields.
+Preformatted rows with no `Record_ID`, no preference, notes, or timestamp, and unchecked
+`Saved`/`Hidden` boxes are blank templates: they are ignored rather than loaded or reported as
+invalid. Any meaningful value on an ID-less row remains an error.
 
 ### Run_Logs
 

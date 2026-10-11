@@ -25,10 +25,16 @@ class SheetSchemaError(ValueError):
     """Raised when worksheet headers do not match the declared schema."""
 
 
+class SheetsOperationError(RuntimeError):
+    """Base error for adapter I/O failures at the Sheets seam."""
+
+
 class SheetsAdapter(Protocol):
     """Seam implemented by the offline adapter now and Google API adapter later."""
 
     def read_worksheet(self, name: str) -> WorksheetData: ...
+
+    def read_record_ids(self, name: str) -> dict[str, int]: ...
 
     def apply_plan(self, plan: SheetSyncPlan, *, dry_run: bool) -> None: ...
 
@@ -212,6 +218,7 @@ class UpdateOperation:
     row_number: int
     record_id: str
     changed_fields: dict[str, Any]
+    expected_values: dict[str, Any]
     value_input_option: str = "RAW"
 
 
@@ -318,6 +325,7 @@ def plan_sheet_sync(
     *,
     run_id: str,
     timestamp: datetime,
+    include_change_log: bool = True,
 ) -> SheetSyncPlan:
     """Build an idempotent, row-position-independent synchronization plan."""
 
@@ -354,18 +362,19 @@ def plan_sheet_sync(
         existing_entry = existing_by_id.get(record_id)
         if existing_entry is None:
             plan.inserts.append(InsertOperation(deepcopy(row)))
-            plan.change_log_rows.append(
-                _event_row(
-                    run_id=run_id,
-                    timestamp=timestamp,
-                    category=schema.name,
-                    record_id=record_id,
-                    change_type="NEW_OPPORTUNITY",
-                    field_name="",
-                    previous_value="",
-                    new_value="",
+            if include_change_log:
+                plan.change_log_rows.append(
+                    _event_row(
+                        run_id=run_id,
+                        timestamp=timestamp,
+                        category=schema.name,
+                        record_id=record_id,
+                        change_type="NEW_OPPORTUNITY",
+                        field_name="",
+                        previous_value="",
+                        new_value="",
+                    )
                 )
-            )
             continue
 
         row_number, existing = existing_entry
@@ -378,7 +387,8 @@ def plan_sheet_sync(
         if not changed:
             plan.unchanged_record_ids.append(record_id)
             continue
-        plan.updates.append(UpdateOperation(row_number, record_id, changed))
+        expected_values = {header: existing.get(header, "") for header in changed}
+        plan.updates.append(UpdateOperation(row_number, record_id, changed, expected_values))
         for header, value in changed.items():
             change_type = "UPDATED_OPPORTUNITY"
             if header in {
@@ -398,18 +408,19 @@ def plan_sheet_sync(
                     if "Deadline" in header
                     else "SALARY_CHANGE"
                 )
-            plan.change_log_rows.append(
-                _event_row(
-                    run_id=run_id,
-                    timestamp=timestamp,
-                    category=schema.name,
-                    record_id=record_id,
-                    change_type=change_type,
-                    field_name=header,
-                    previous_value=existing.get(header, ""),
-                    new_value=value,
+            if include_change_log:
+                plan.change_log_rows.append(
+                    _event_row(
+                        run_id=run_id,
+                        timestamp=timestamp,
+                        category=schema.name,
+                        record_id=record_id,
+                        change_type=change_type,
+                        field_name=header,
+                        previous_value=existing.get(header, ""),
+                        new_value=value,
+                    )
                 )
-            )
     return plan
 
 
@@ -437,6 +448,18 @@ class InMemorySheetsAdapter:
     def read_worksheet(self, name: str) -> WorksheetData:
         return deepcopy(self._worksheets[name])
 
+    def read_record_ids(self, name: str) -> dict[str, int]:
+        worksheet = self.read_worksheet(name)
+        schema = self.schemas[name]
+        result: dict[str, int] = {}
+        for row_number, row in enumerate(worksheet.rows, start=2):
+            record_id = row.get(schema.record_id_header)
+            if isinstance(record_id, str) and record_id:
+                if record_id in result:
+                    raise SheetsOperationError(f"duplicate Record_ID in {name}: {record_id}")
+                result[record_id] = row_number
+        return result
+
     def apply_plan(self, plan: SheetSyncPlan, *, dry_run: bool) -> None:
         if dry_run or plan.conflicts:
             return
@@ -453,8 +476,16 @@ class InMemorySheetsAdapter:
                 worksheet.rows.extend(additions)
                 self.write_operations.append((plan.sheet_name, "batch_insert", "RAW"))
         if plan.updates:
+            schema = self.schemas[plan.sheet_name]
             for operation in plan.updates:
                 row = worksheet.rows[operation.row_number - 2]
+                if row.get(schema.record_id_header) != operation.record_id or any(
+                    row.get(header, "") != expected
+                    for header, expected in operation.expected_values.items()
+                ):
+                    raise SheetsOperationError(
+                        f"{plan.sheet_name} changed after planning; update refused"
+                    )
                 row.update(deepcopy(operation.changed_fields))
             self.write_operations.append((plan.sheet_name, "batch_update", "RAW"))
         self.append_unique("Change_Log", plan.change_log_rows)
@@ -617,6 +648,21 @@ def _feedback_bool(value: Any, field_name: str) -> bool:
     raise ValueError(f"{field_name} must be true or false")
 
 
+def is_blank_feedback_template_row(row: dict[str, Any]) -> bool:
+    """Return true for a preformatted feedback row containing only default values."""
+
+    empty_text = (None, "")
+    false_checkbox_values = (None, "", False, "FALSE", "false")
+    return (
+        row.get("Record_ID") in empty_text
+        and row.get("Preference") in (*empty_text, "None")
+        and row.get("Saved") in false_checkbox_values
+        and row.get("Hidden") in false_checkbox_values
+        and row.get("Personal_Notes") in empty_text
+        and row.get("Updated_At") in empty_text
+    )
+
+
 def load_feedback(adapter: SheetsAdapter) -> FeedbackLoadResult:
     """Load canonical user-managed feedback without mutating the worksheet."""
 
@@ -625,6 +671,8 @@ def load_feedback(adapter: SheetsAdapter) -> FeedbackLoadResult:
     result = FeedbackLoadResult()
     seen: set[str] = set()
     for row_number, row in enumerate(worksheet.rows, start=2):
+        if is_blank_feedback_template_row(row):
+            continue
         record_id = row.get("Record_ID")
         if not isinstance(record_id, str) or not record_id.strip():
             result.invalid_records.append(
@@ -708,7 +756,7 @@ def sync_execution_report(
             )
             result.plans[category] = plan
             adapter.apply_plan(plan, dry_run=dry_run)
-        except (KeyError, SheetSchemaError, ValueError) as exc:
+        except (KeyError, SheetSchemaError, SheetsOperationError, ValueError) as exc:
             failure = str(exc)
             result.failures[category] = failure
         run_logs.append(

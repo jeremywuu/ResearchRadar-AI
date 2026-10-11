@@ -145,6 +145,19 @@ and never replaces a whole worksheet. It does not delete absent records or infer
 Header drift and duplicate IDs are integrity failures. Untrusted external text must use literal
 RAW writes. Live credentials and Google API calls are deferred to Milestone 3B.
 
+## Milestone 3B live integration boundary
+
+Milestone 3B connects the same planner to one explicitly configured existing spreadsheet through
+the official Google Sheets API. It may create only missing approved worksheets; it never deletes
+rows, replaces sheets, repairs incompatible headers automatically, or searches Google Drive.
+Synthetic demo writes require an explicit test environment and `--apply`. Live verification and
+the milestone commit are permitted only after the user authenticates, reviews both dry-runs, and
+authorizes the first test write.
+
+`config/watchlist.yaml` remains the sole watchlist authority and the worksheet is a one-way
+mirror. `My_Feedback` remains the sole spreadsheet-owned input and is loaded before processing;
+automated writes never modify its preference, saved, hidden, notes, or timestamp fields.
+
 ## Future capabilities
 
 - PhD career intelligence

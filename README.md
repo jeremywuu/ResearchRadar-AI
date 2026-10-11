@@ -6,8 +6,10 @@ ResearchRadar AI is a personal academic and industry intelligence system for tra
 - Research-oriented industry jobs and future career targets
 - Academic conferences, workshops, exhibitions, and networking events
 
-Milestone 3A adds an offline Google Sheets synchronization planner over explicitly fictional
-fixtures. It does not call Google APIs, scrape websites, call an LLM, or deploy GitHub Actions.
+Milestone 3B adds a live Google Sheets API adapter around the Milestone 3A planner. Automated
+tests remain offline, and the first live write is gated behind authentication, the `test`
+environment, and an explicit `--apply` flag. It still does not search live sources, call an LLM,
+or deploy GitHub Actions.
 
 ## Requirements
 
@@ -19,10 +21,12 @@ fixtures. It does not call Google APIs, scrape websites, call an LLM, or deploy 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install -e '.[dev,sheets]'
 ```
 
-No API keys are required. `.env.example` is intentionally empty for this milestone.
+Google credentials are not required for the ordinary test suite. Follow
+`docs/GOOGLE_SHEETS_SETUP.md` before using live commands; never commit `.env`, OAuth client files,
+or cached tokens.
 
 ## Commands
 
@@ -58,6 +62,16 @@ research-radar sheets-plan --demo --reference-date 2026-10-12
 
 This is always a dry-run. It prints inserts, targeted updates, unchanged records, invalid rows,
 conflicts, and estimated opportunity-sheet operations without writing any worksheet.
+
+After configuring authentication, inspect the test spreadsheet without changing it:
+
+```bash
+research-radar sheets-status
+research-radar sheets-init --dry-run
+research-radar sheets-sync --demo --dry-run
+```
+
+Live writes always require `--apply`. Do not use it until the dry-run output has been reviewed.
 
 Run tests:
 
@@ -97,3 +111,4 @@ The committed `fixtures/demo/*.json` records use fictional organizations and res
 - Architecture: `docs/ARCHITECTURE.md`
 - Roadmap and acceptance criteria: `docs/ROADMAP.md`
 - Domain and Google Sheets schema: `docs/DATA_SCHEMA.md`
+- Google Cloud and Sheets setup: `docs/GOOGLE_SHEETS_SETUP.md`

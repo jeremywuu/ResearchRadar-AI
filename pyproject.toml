@@ -16,6 +16,11 @@ dev = [
   "pytest>=8.0,<9",
   "ruff>=0.8,<1",
 ]
+sheets = [
+  "google-api-python-client>=2.0,<3",
+  "google-auth>=2.0,<3",
+  "google-auth-oauthlib>=1.0,<2",
+]
 
 [project.scripts]
 research-radar = "research_radar.cli:main"
@@ -27,6 +32,9 @@ where = ["src"]
 addopts = "-ra"
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+  "live_google_sheets: opt-in read-only test requiring configured Google credentials",
+]
 
 [tool.ruff]
 target-version = "py311"
