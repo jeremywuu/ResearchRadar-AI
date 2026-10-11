@@ -52,6 +52,8 @@ source_urls
 identity_key
 first_seen_at
 last_seen_at
+content_updated_at
+retrieved_at
 source_verification_status
 opportunity_status
 classification
@@ -65,7 +67,17 @@ original_values
 country?
 region?
 research_areas
+official_source_url?
+source_type?
+source_evidence
+extraction_method?
+is_fictional
 ```
+
+`first_seen_at` is the earliest observation. `last_seen_at` is the most recent successful
+observation of that record. `content_updated_at` changes only when material source content changes;
+observation time alone is not a content change. `retrieved_at` identifies the retrieval producing
+the current incoming observation.
 
 ## IndustryJob
 
@@ -123,8 +135,13 @@ starts_on?
 ends_on?
 submission_deadline?
 registration_deadline?
+workshop_submission_deadline?
+presenter_registration_deadline?
 event_url?
 ```
+
+A conditional presenter-registration deadline is not stored as the general registration
+deadline. Workshop-proposal and abstract-submission deadlines also remain separate.
 
 ## UserFeedback
 
@@ -148,8 +165,34 @@ personalized score, rank, exclusion state, processing status, and optional feedb
 the JSON adapter preserves the earliest first-seen timestamp and existing feedback when the new
 input has no feedback. Generated snapshots live under Git-ignored `data/`.
 
-Unknown source facts remain `null`; review flags identify actionable unknowns. The complete raw
-fictional input is retained in `original_values`, while normalized values occupy typed fields.
+Unknown source facts remain `null`; review flags identify actionable unknowns. The complete
+bounded extracted input is retained in `original_values`, while normalized values occupy typed
+fields. `is_fictional` distinguishes demo fixtures from live official-source records.
+
+## Official source collection result
+
+Each source result contains a `SourceDescriptor` and retrieval outcome:
+
+```text
+source_id
+organization
+category
+official_source_url
+retrieval_url
+retrieval_method          # PUBLIC_API or OFFICIAL_HTML
+verification_status       # official-source identity only
+health                    # SUCCESS, SUCCESS_NO_MATCHES, PARTIAL, FAILED, BLOCKED, UNSUPPORTED
+extraction_status         # SUCCESS, PARTIAL, FAILED, NO_MATCHES
+retrieved_at
+last_successful_retrieval_at?
+records_fetched
+http_statuses
+errors
+records
+```
+
+These fields deliberately do not conflate official verification, functioning extraction, and
+confirmed opportunity availability.
 
 ## Google Sheets ownership
 
@@ -288,6 +331,13 @@ Error_Count
 Error_Summary
 ```
 
+`Processed_Count` retains the Milestone 3 sheet meaning (records passed to the category pipeline).
+To preserve the deployed worksheet schema without a destructive migration, `Error_Summary`
+contains explicit labeled subcounts for `fetched`, `accepted`, validation `rejected`, intentional
+`excluded`, `source_extraction_errors`, `pipeline_errors`, and `synchronization_errors`, followed
+by bounded error details. `Error_Count` sums technical errors and validation rejections; it does
+not count intentional relevance or language exclusions.
+
 ### Change_Log
 
 ```text
@@ -305,6 +355,7 @@ New_Value
 ```
 
 `Event_ID` is derived from category, opportunity ID, change type, field, old value, and new value.
+A `Last_Seen`-only observation update is not a meaningful content change and creates no event.
 The append adapter ignores an already-present event ID, making retries idempotent.
 
 ## Synchronization rules

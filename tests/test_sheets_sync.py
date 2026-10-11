@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 from research_radar.config import load_watchlist
-from research_radar.models import ExecutionReport, PreferenceFeedback
+from research_radar.models import (
+    ExecutionReport,
+    PipelineReport,
+    PipelineStatus,
+    PreferenceFeedback,
+)
 from research_radar.pipelines import run_jobs_pipeline, run_phd_pipeline
 from research_radar.storage.sheets import (
     CHANGE_LOG_SCHEMA,
@@ -428,6 +433,117 @@ def test_salary_and_status_updates_create_specific_change_events() -> None:
         ("SALARY_CHANGE", "Original_Salary"),
         ("STATUS_CHANGE", "Opportunity_Status"),
     }
+
+
+def test_last_seen_only_update_does_not_create_meaningful_change_event() -> None:
+    existing = job_row("job_observed")
+    desired = deepcopy(existing)
+    desired["Last_Seen"] = "2026-10-20T09:00:00+00:00"
+
+    plan = plan_sheet_sync(
+        INDUSTRY_JOBS_SCHEMA,
+        [desired],
+        WorksheetData(headers=INDUSTRY_JOBS_SCHEMA.headers, rows=[existing]),
+        run_id="run_observed",
+        timestamp=NOW,
+    )
+
+    assert plan.update_count == 1
+    assert plan.updates[0].changed_fields == {"Last_Seen": "2026-10-20T09:00:00+00:00"}
+    assert plan.change_log_rows == []
+
+
+def test_material_change_logs_only_material_fields_when_last_seen_also_advances() -> None:
+    existing = job_row("job_material", title="Old title")
+    desired = job_row("job_material", title="New title")
+    desired["Last_Seen"] = "2026-10-20T09:00:00+00:00"
+
+    plan = plan_sheet_sync(
+        INDUSTRY_JOBS_SCHEMA,
+        [desired],
+        WorksheetData(headers=INDUSTRY_JOBS_SCHEMA.headers, rows=[existing]),
+        run_id="run_material",
+        timestamp=NOW,
+    )
+
+    assert {row["Field_Name"] for row in plan.change_log_rows} == {"Job_Title"}
+
+
+def test_run_log_counts_validation_errors_but_not_intentional_exclusions() -> None:
+    explicit_non_english = _job_fixture() | {"working_language": "German required"}
+    report = run_jobs_pipeline(
+        [explicit_non_english, {"fictional": True}],
+        config_dir=PROJECT_ROOT / "config",
+        observed_at=NOW,
+    )
+    adapter = InMemorySheetsAdapter()
+
+    sync_execution_report(
+        ExecutionReport(pipelines={"jobs": report}),
+        adapter,
+        dry_run=False,
+        run_id="run_log_accuracy",
+        timestamp=NOW,
+    )
+
+    log = adapter.read_worksheet("Run_Logs").rows[0]
+    assert log["Error_Count"] == 1
+    assert "rejected=1" in log["Error_Summary"]
+    assert "excluded=1" in log["Error_Summary"]
+    assert "pipeline_errors=0" in log["Error_Summary"]
+
+
+def test_run_log_distinguishes_pipeline_failure_from_synchronization_error() -> None:
+    report = PipelineReport(
+        category="jobs",
+        status=PipelineStatus.FAILED,
+        records_processed=0,
+        records_accepted=0,
+        duplicates_found=0,
+        records_excluded=0,
+        validation_errors=(),
+        records=(),
+        failure="source parser crashed",
+    )
+    adapter = InMemorySheetsAdapter()
+
+    sync_execution_report(
+        ExecutionReport(pipelines={"jobs": report}),
+        adapter,
+        dry_run=False,
+        run_id="run_pipeline_failure",
+        timestamp=NOW,
+    )
+
+    log = adapter.read_worksheet("Run_Logs").rows[0]
+    assert log["Error_Count"] == 1
+    assert "pipeline_errors=1" in log["Error_Summary"]
+    assert "synchronization_errors=0" in log["Error_Summary"]
+
+
+def test_run_log_aggregates_source_pipeline_and_sync_errors_separately() -> None:
+    report = run_jobs_pipeline(
+        [_job_fixture()], config_dir=PROJECT_ROOT / "config", observed_at=NOW
+    )
+    report.records_fetched = 12
+    report.source_extraction_errors = ("one source record could not be extracted",)
+    report.pipeline_processing_errors = ("one scoring error",)
+    adapter = InMemorySheetsAdapter(headers_by_sheet={"Industry_Jobs": ("Invalid",)})
+
+    sync_execution_report(
+        ExecutionReport(pipelines={"jobs": report}),
+        adapter,
+        dry_run=False,
+        run_id="run_aggregate_errors",
+        timestamp=NOW,
+    )
+
+    log = adapter.read_worksheet("Run_Logs").rows[0]
+    assert log["Error_Count"] == 3
+    assert "fetched=12" in log["Error_Summary"]
+    assert "source_extraction_errors=1" in log["Error_Summary"]
+    assert "pipeline_errors=1" in log["Error_Summary"]
+    assert "synchronization_errors=1" in log["Error_Summary"]
 
 
 def test_declared_feedback_and_log_schemas_are_explicit() -> None:

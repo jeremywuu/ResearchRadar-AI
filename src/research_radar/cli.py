@@ -6,6 +6,7 @@ import argparse
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from research_radar.collectors.service import collect_live
 from research_radar.config import ConfigValidationError, load_all_configs
 from research_radar.demo import process_demo, run_demo
 from research_radar.sheets_demo import build_demo_sheets_adapter
@@ -52,6 +53,20 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "sheets-status", help="check Google Sheets connectivity and schema without writes"
     )
+    collect = subparsers.add_parser(
+        "collect", help="collect from explicitly selected verified official sources"
+    )
+    collect.add_argument("category", choices=("all", "jobs", "phd", "events"))
+    collect.add_argument(
+        "--live",
+        action="store_true",
+        required=True,
+        help="explicitly authorize read-only network access",
+    )
+    collect.add_argument("--source", help="optional exact source identifier")
+    collect.add_argument("--project-root", type=Path, default=Path.cwd())
+    collect.add_argument("--output-dir", type=Path, default=Path("data/live"))
+    collect.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
     return parser
 
 
@@ -130,6 +145,44 @@ def main(argv: list[str] | None = None) -> int:
         for category, failure in result.failures.items():
             print(f"{category}: FAILED; {failure}")
         return 1 if result.failures else 0
+    if args.command == "collect":
+        observed_at = datetime.now(UTC)
+        categories = ("jobs", "phd", "events") if args.category == "all" else (args.category,)
+        try:
+            result = collect_live(
+                categories,
+                project_root=args.project_root,
+                output_dir=args.output_dir,
+                observed_at=observed_at,
+                reference_date=args.reference_date,
+                source_id=args.source,
+            )
+        except ValueError as exc:
+            print(f"Collection failed: {exc}")
+            return 1
+        print("Official-source collection (read-only network; local JSON only)")
+        for source in result.sources.values():
+            print(
+                f"{source.source.source_id}: {source.health.value}; "
+                f"fetched={source.records_fetched}; extracted={len(source.records)}; "
+                f"extraction_errors={len(source.errors)}"
+            )
+            for error in source.errors:
+                print(f"  error: {error}")
+        for category, report in result.execution.pipelines.items():
+            print(
+                f"{category}: {report.status.value}; fetched={report.records_fetched or 0}; "
+                f"extracted={report.records_processed}; accepted={report.records_accepted}; "
+                f"rejected={len(report.validation_errors)}; excluded={report.records_excluded}"
+            )
+            if report.output_path:
+                print(f"  output: {report.output_path}")
+        print(f"source metadata: {result.metadata_path}")
+        failed_health = {"FAILED", "BLOCKED", "UNSUPPORTED"}
+        return int(
+            bool(result.execution.failed_pipelines)
+            or any(source.health.value in failed_health for source in result.sources.values())
+        )
     try:
         if args.command == "sheets-init":
             plan = _live_adapter().initialize_workbook(apply=args.apply)

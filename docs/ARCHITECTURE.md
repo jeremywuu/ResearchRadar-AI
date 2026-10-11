@@ -9,7 +9,7 @@ can be tested without credentials or live services.
 ## Local processing flow
 
 ```text
-fictional JSON fixtures + YAML configuration
+fictional fixtures or verified official adapters + YAML configuration
        │
        ├── PhD pipeline ─────────┐
        ├── Job pipeline ─────────┼──► validate ─► normalize ─► classify
@@ -28,7 +28,8 @@ processing modules but not run success state.
 - `identifiers`: deterministic identifiers based on canonical source-owned fields.
 - `pipelines`: independently executable category processing and failure-isolated orchestration.
 - `discovery`: reserved for later open-web and source discovery policy.
-- `collectors`: local fixture loading now; live adapters arrive later.
+- `collectors`: bounded read-only HTTP retrieval, source contracts, deterministic extraction,
+  and live collection orchestration.
 - `normalization`: converts source records into domain models without network access.
 - `deduplication`: resolves exact identities and flags uncertain matches.
 - `scoring`: deterministic, explainable category scoring.
@@ -68,8 +69,18 @@ Preference feedback creates a separate personalized score. `saved` does not alte
 
 ## Seams and adapters
 
-Future collectors will satisfy a shared collector interface only after at least two concrete
-source mechanisms exist. Storage is separated from processing. `JsonOutputStore` handles local
+Official collectors satisfy `OfficialSourceAdapter`. `SourceDescriptor` records the verified
+organization/source relationship and retrieval method; `SourceCollectionResult` independently
+records adapter health, extraction status, HTTP outcomes, and extracted source records. A
+verified source may be blocked, a working adapter may return no matches, and a returned record
+still needs explicit source evidence before it can be classified as an active opportunity.
+
+The initial mechanisms are Anthropic's employer-linked Greenhouse Job Board API and deterministic
+HTML extraction for UCL Gatsby and COSYNE. HTTP is GET-only, uses a descriptive User-Agent,
+timeouts, bounded retries, robots checks for HTML, and injected transports for offline tests.
+No HTML or JSON content is executed or treated as agent instructions.
+
+Storage is separated from processing. `JsonOutputStore` handles local
 snapshots, while the `SheetsAdapter` interface defines worksheet reads, planned writes, and
 append-only logs. `InMemorySheetsAdapter` supplies the offline implementation.
 `GoogleSheetsAdapter` implements the same seam with the official API client without changing
@@ -94,8 +105,26 @@ current worksheet ─► validate headers + rebuild ID map
 The planner is pure: it reads current rows and returns inserts, updates, unchanged IDs, invalid
 records, conflicts, change events, and an operation estimate. It never relies on row order.
 Duplicate IDs or header drift prevent writes for that sheet. Missing input records cause no
-deletion or status change. `First_Seen` is never overwritten; `Last_Seen` follows processed
-evidence.
+deletion or status change. `First_Seen` is never overwritten; `Last_Seen` advances only after a
+successful source observation. `Content_Updated_At` advances only when material opportunity
+content changes. A `Last_Seen`-only update may be synchronized but does not create a Change_Log
+event.
+
+## Live collection flow
+
+```text
+verified official source ─► bounded GET ─► deterministic extraction
+                                            │
+                                            ▼
+source health + evidence ─► existing category pipeline ─► data/live/*.json
+                                            │
+                                            └────────────► source_metadata.json
+```
+
+Each category remains a separate failure domain. Local collection summaries distinguish fetched,
+extracted, accepted, validation-rejected, intentionally excluded, source-extraction-error, and
+pipeline-error counts. Intentionally irrelevant or language-incompatible records are exclusions,
+not technical errors.
 
 Opportunity sheets contain only agent-managed columns. `My_Feedback` is the canonical source for
 preference, saved, hidden, and personal notes. Feedback is loaded into `UserFeedback` for later

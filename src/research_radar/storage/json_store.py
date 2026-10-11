@@ -56,6 +56,10 @@ class JsonOutputStore:
                 opportunity["last_seen_at"],
                 old_opportunity.get("last_seen_at", opportunity["last_seen_at"]),
             )
+            if self._material_content(opportunity) == self._material_content(old_opportunity):
+                opportunity["content_updated_at"] = old_opportunity.get(
+                    "content_updated_at", opportunity["content_updated_at"]
+                )
             if record.get("feedback") is None and existing.get("feedback") is not None:
                 record["feedback"] = existing["feedback"]
                 record["personalized_score"] = existing.get("personalized_score")
@@ -80,6 +84,16 @@ class JsonOutputStore:
         )
         report.output_path = output_path
         return output_path
+
+    @staticmethod
+    def _material_content(opportunity: dict[str, Any]) -> dict[str, Any]:
+        ignored = {
+            "first_seen_at",
+            "last_seen_at",
+            "retrieved_at",
+            "content_updated_at",
+        }
+        return {key: value for key, value in opportunity.items() if key not in ignored}
 
     @staticmethod
     def _existing_records(path: Path) -> dict[str, dict[str, Any]]:

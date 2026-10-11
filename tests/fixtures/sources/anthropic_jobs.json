@@ -1,0 +1,16 @@
+{
+  "jobs": [
+    {
+      "id": 12345,
+      "title": "Research Scientist, Interpretability",
+      "absolute_url": "https://job-boards.greenhouse.io/anthropic/jobs/12345",
+      "location": {"name": "San Francisco, California, United States"},
+      "content": "<p>Conduct machine learning research. PhD preferred or equivalent experience.</p>"
+    },
+    {
+      "id": 67890,
+      "title": "Office Coordinator",
+      "absolute_url": "https://job-boards.greenhouse.io/anthropic/jobs/67890"
+    }
+  ]
+}

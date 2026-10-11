@@ -111,6 +111,27 @@ class PipelineStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class SourceHealth(StrEnum):
+    SUCCESS = "SUCCESS"
+    SUCCESS_NO_MATCHES = "SUCCESS_NO_MATCHES"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+    BLOCKED = "BLOCKED"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class ExtractionStatus(StrEnum):
+    SUCCESS = "SUCCESS"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+    NO_MATCHES = "NO_MATCHES"
+
+
+class RetrievalMethod(StrEnum):
+    PUBLIC_API = "PUBLIC_API"
+    OFFICIAL_HTML = "OFFICIAL_HTML"
+
+
 class CompensationDisclosureStatus(StrEnum):
     DISCLOSED = "DISCLOSED"
     PARTIALLY_DISCLOSED = "PARTIALLY_DISCLOSED"
@@ -160,6 +181,13 @@ class Opportunity:
     country: str | None = None
     region: str | None = None
     research_areas: tuple[str, ...] = ()
+    content_updated_at: datetime | None = None
+    retrieved_at: datetime | None = None
+    official_source_url: str | None = None
+    source_type: str | None = None
+    source_evidence: tuple[str, ...] = ()
+    extraction_method: str | None = None
+    is_fictional: bool = False
 
     def __post_init__(self) -> None:
         if not self.title.strip() or not self.organization.strip():
@@ -167,6 +195,12 @@ class Opportunity:
         _validate_http_url(self.source_url, "source_url")
         if self.last_seen_at < self.first_seen_at:
             raise ValueError("last_seen_at cannot precede first_seen_at")
+        if self.content_updated_at is None:
+            self.content_updated_at = self.first_seen_at
+        if self.retrieved_at is None:
+            self.retrieved_at = self.last_seen_at
+        if self.official_source_url:
+            _validate_http_url(self.official_source_url, "official_source_url")
         if not self.source_urls:
             self.source_urls = (self.source_url,)
         if not self.opportunity_id:
@@ -236,6 +270,8 @@ class AcademicEvent(Opportunity):
     series_name: str | None = None
     edition_year: int | None = None
     registration_deadline: date | None = None
+    workshop_submission_deadline: date | None = None
+    presenter_registration_deadline: date | None = None
     academic_event_type: AcademicEventType = AcademicEventType.UNKNOWN
 
 
@@ -313,6 +349,9 @@ class PipelineReport:
     records: tuple[ProcessedOpportunity, ...]
     output_path: Path | None = None
     failure: str | None = None
+    records_fetched: int | None = None
+    source_extraction_errors: tuple[str, ...] = ()
+    pipeline_processing_errors: tuple[str, ...] = ()
 
 
 @dataclass(kw_only=True)

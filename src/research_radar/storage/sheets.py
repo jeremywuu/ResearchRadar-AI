@@ -390,6 +390,8 @@ def plan_sheet_sync(
         expected_values = {header: existing.get(header, "") for header in changed}
         plan.updates.append(UpdateOperation(row_number, record_id, changed, expected_values))
         for header, value in changed.items():
+            if header == "Last_Seen":
+                continue
             change_type = "UPDATED_OPPORTUNITY"
             if header in {
                 "Opportunity_Status",
@@ -709,10 +711,38 @@ def _run_log_row(
     processed: int,
     plan: SheetSyncPlan | None,
     error: str | None,
+    *,
+    fetched: int | None = None,
+    accepted: int = 0,
+    rejected_errors: tuple[str, ...] = (),
+    excluded: int = 0,
+    extraction_errors: tuple[str, ...] = (),
+    pipeline_errors: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     record_id = generate_stable_identifier("runlog", run_id, category)
     plan_errors = [issue.message for issue in (plan.invalid_records if plan else [])]
     plan_errors.extend(issue.message for issue in (plan.conflicts if plan else []))
+    synchronization_error_count = (plan.invalid_count + plan.conflict_count) if plan else 0
+    if error:
+        synchronization_error_count += 1
+    error_count = (
+        len(rejected_errors)
+        + len(extraction_errors)
+        + len(pipeline_errors)
+        + synchronization_error_count
+    )
+    summary_parts = [
+        f"fetched={fetched if fetched is not None else processed}",
+        f"accepted={accepted}",
+        f"rejected={len(rejected_errors)}",
+        f"excluded={excluded}",
+        f"source_extraction_errors={len(extraction_errors)}",
+        f"pipeline_errors={len(pipeline_errors)}",
+        f"synchronization_errors={synchronization_error_count}",
+    ]
+    details = [*rejected_errors, *extraction_errors, *pipeline_errors, *plan_errors]
+    if error:
+        details.append(error)
     return {
         "Record_ID": record_id,
         "Run_ID": run_id,
@@ -723,8 +753,8 @@ def _run_log_row(
         "Inserted_Count": plan.insert_count if plan else 0,
         "Updated_Count": plan.update_count if plan else 0,
         "Unchanged_Count": plan.unchanged_count if plan else 0,
-        "Error_Count": (plan.invalid_count + plan.conflict_count) if plan else int(bool(error)),
-        "Error_Summary": error or "; ".join(plan_errors),
+        "Error_Count": error_count,
+        "Error_Summary": "; ".join(summary_parts + details),
     }
 
 
@@ -742,23 +772,30 @@ def sync_execution_report(
     run_logs: list[dict[str, Any]] = []
     for category, pipeline_report in execution.pipelines.items():
         plan: SheetSyncPlan | None = None
-        failure: str | None = pipeline_report.failure
-        try:
-            if pipeline_report.status is PipelineStatus.FAILED:
-                raise ValueError(failure or "pipeline failed")
-            schema, rows = sheet_rows_from_report(pipeline_report)
-            plan = plan_sheet_sync(
-                schema,
-                rows,
-                adapter.read_worksheet(schema.name),
-                run_id=run_id,
-                timestamp=timestamp,
-            )
-            result.plans[category] = plan
-            adapter.apply_plan(plan, dry_run=dry_run)
-        except (KeyError, SheetSchemaError, SheetsOperationError, ValueError) as exc:
-            failure = str(exc)
-            result.failures[category] = failure
+        pipeline_failure = (
+            pipeline_report.failure if pipeline_report.status is PipelineStatus.FAILED else None
+        )
+        synchronization_failure: str | None = None
+        if pipeline_failure:
+            result.failures[category] = pipeline_failure
+        else:
+            try:
+                schema, rows = sheet_rows_from_report(pipeline_report)
+                plan = plan_sheet_sync(
+                    schema,
+                    rows,
+                    adapter.read_worksheet(schema.name),
+                    run_id=run_id,
+                    timestamp=timestamp,
+                )
+                result.plans[category] = plan
+                adapter.apply_plan(plan, dry_run=dry_run)
+            except (KeyError, SheetSchemaError, SheetsOperationError, ValueError) as exc:
+                synchronization_failure = str(exc)
+                result.failures[category] = synchronization_failure
+        pipeline_errors = pipeline_report.pipeline_processing_errors
+        if pipeline_failure and pipeline_failure not in pipeline_errors:
+            pipeline_errors = (*pipeline_errors, pipeline_failure)
         run_logs.append(
             _run_log_row(
                 run_id,
@@ -766,14 +803,22 @@ def sync_execution_report(
                 category,
                 (
                     "PARTIAL"
-                    if failure is None and plan and (plan.invalid_records or plan.conflicts)
+                    if synchronization_failure is None
+                    and plan
+                    and (plan.invalid_records or plan.conflicts)
                     else pipeline_report.status.value
-                    if failure is None
+                    if synchronization_failure is None
                     else "FAILED"
                 ),
                 pipeline_report.records_processed,
                 plan,
-                failure,
+                synchronization_failure,
+                fetched=pipeline_report.records_fetched,
+                accepted=pipeline_report.records_accepted,
+                rejected_errors=pipeline_report.validation_errors,
+                excluded=pipeline_report.records_excluded,
+                extraction_errors=pipeline_report.source_extraction_errors,
+                pipeline_errors=pipeline_errors,
             )
         )
     if not dry_run:

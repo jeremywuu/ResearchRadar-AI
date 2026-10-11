@@ -115,6 +115,31 @@ def _required_text(raw: dict[str, Any], field_name: str) -> str:
     return value.strip()
 
 
+def _record_kind(raw: dict[str, Any]) -> bool:
+    fictional = raw.get("fictional")
+    if not isinstance(fictional, bool):
+        raise RecordValidationError("fictional must be explicitly true or false")
+    return fictional
+
+
+def _provenance(raw: dict[str, Any], *, observed_at: datetime, source_url: str) -> dict[str, Any]:
+    evidence = raw.get("source_evidence", [])
+    if not isinstance(evidence, list) or not all(isinstance(item, str) for item in evidence):
+        raise RecordValidationError("source_evidence must be a list of strings")
+    official_source_url = normalize_url(str(raw.get("official_source_url") or source_url))
+    return {
+        "content_updated_at": observed_at,
+        "retrieved_at": observed_at,
+        "official_source_url": official_source_url,
+        "source_type": str(raw["source_type"]).strip() if raw.get("source_type") else None,
+        "source_evidence": tuple(item.strip() for item in evidence if item.strip()),
+        "extraction_method": str(raw["extraction_method"]).strip()
+        if raw.get("extraction_method")
+        else None,
+        "is_fictional": _record_kind(raw),
+    }
+
+
 def _research_orientation(value: object) -> ResearchOrientation:
     mapping = {
         "research-oriented": ResearchOrientation.RESEARCH_ORIENTED,
@@ -196,8 +221,6 @@ def _salary_period(value: object) -> str | None:
 
 
 def normalize_job(raw: dict[str, Any], *, observed_at: datetime) -> IndustryJob:
-    if raw.get("fictional") is not True:
-        raise RecordValidationError("demo records must be explicitly marked fictional")
     title = _required_text(raw, "title")
     organization = normalize_organization(_required_text(raw, "organization"))
     source_url = normalize_url(_required_text(raw, "source_url"))
@@ -248,7 +271,6 @@ def normalize_job(raw: dict[str, Any], *, observed_at: datetime) -> IndustryJob:
         first_seen_at=observed_at,
         last_seen_at=observed_at,
         source_verification_status=source_status,
-        opportunity_status=OpportunityStatus.UNKNOWN,
         classification=_job_classification(title, education),
         opportunity_id=generate_stable_identifier("job", *identity_parts),
         identity_key=identity_key,
@@ -296,6 +318,8 @@ def normalize_job(raw: dict[str, Any], *, observed_at: datetime) -> IndustryJob:
         if salary_data.get("original_text")
         else None,
         compensation_disclosure_status=disclosure,
+        opportunity_status=_opportunity_status(raw.get("opportunity_status")),
+        **_provenance(raw, observed_at=observed_at, source_url=source_url),
     )
 
 
@@ -329,8 +353,6 @@ def _phd_type(value: object) -> PhDOpportunityType:
 
 
 def normalize_phd(raw: dict[str, Any], *, observed_at: datetime) -> PhDOpportunity:
-    if raw.get("fictional") is not True:
-        raise RecordValidationError("demo records must be explicitly marked fictional")
     title = _required_text(raw, "title")
     organization = normalize_organization(_required_text(raw, "organization"))
     source_url = normalize_url(_required_text(raw, "source_url"))
@@ -377,6 +399,7 @@ def normalize_phd(raw: dict[str, Any], *, observed_at: datetime) -> PhDOpportuni
         else None,
         official_opportunity_id=official_id,
         opportunity_type=_phd_type(raw.get("opportunity_type")),
+        **_provenance(raw, observed_at=observed_at, source_url=source_url),
     )
 
 
@@ -393,8 +416,6 @@ def _event_type(value: object) -> AcademicEventType:
 
 
 def normalize_event(raw: dict[str, Any], *, observed_at: datetime) -> AcademicEvent:
-    if raw.get("fictional") is not True:
-        raise RecordValidationError("demo records must be explicitly marked fictional")
     title = _required_text(raw, "title")
     series_name = _required_text(raw, "series_name")
     organization = normalize_organization(_required_text(raw, "organization"))
@@ -438,8 +459,15 @@ def normalize_event(raw: dict[str, Any], *, observed_at: datetime) -> AcademicEv
         ends_on=ends_on,
         submission_deadline=parse_date(raw.get("submission_deadline"), "submission_deadline"),
         registration_deadline=parse_date(raw.get("registration_deadline"), "registration_deadline"),
+        workshop_submission_deadline=parse_date(
+            raw.get("workshop_submission_deadline"), "workshop_submission_deadline"
+        ),
+        presenter_registration_deadline=parse_date(
+            raw.get("presenter_registration_deadline"), "presenter_registration_deadline"
+        ),
         deadline=parse_date(raw.get("submission_deadline"), "submission_deadline"),
         event_url=official_url,
         series_name=series_name,
         edition_year=edition_year_value,
+        **_provenance(raw, observed_at=observed_at, source_url=source_url),
     )

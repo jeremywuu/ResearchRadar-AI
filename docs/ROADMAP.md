@@ -93,11 +93,38 @@ Completion evidence:
   intact while its base research relevance remained unchanged.
 - All seven schemas and the opt-in read-only live integration test passed.
 
-## Milestone 4 — Initial official-source adapters
+## Milestone 4A/4B — Initial official-source adapters and bounded collection
+
+Status: complete.
 
 - Review access terms before implementing each adapter.
 - Connect a small number of official sources for every category.
 - Track adapter health separately from source verification and opportunity status.
+- Store real records only in ignored local JSON; do not synchronize them to Sheets yet.
+- Keep Anthropic detail retrieval bounded, report UCL access challenges as `BLOCKED`, and read
+  only robots-permitted COSYNE public HTML.
+
+Acceptance criteria:
+
+- Anthropic, UCL Gatsby, and COSYNE adapters use verified official source relationships.
+- Mocked/recorded tests cover success, no matches, malformed content, access failures, retries,
+  evidence, dates/cycles, deduplication, repeat observations, and category isolation.
+- `Last_Seen`-only updates do not create content-change events; material changes update
+  `Content_Updated_At`.
+- CLI collection requires explicit `--live`, writes only under ignored `data/live/`, and never
+  writes to Google Sheets.
+- A bounded live smoke test reports actual results without bypassing blocked access.
+
+Completion evidence:
+
+- Final bounded retrieval succeeded for the verified Anthropic Greenhouse API, UCL Gatsby public
+  programme page, and COSYNE public HTML pages.
+- The run observed 645 Anthropic board entries, requested details for the bounded 25-title
+  candidate set, and accepted 25 records; these volatile counts are observations, not fixtures.
+- UCL yielded one confirmed 2027 programme record; COSYNE yielded one distinct 2027 event with
+  abstract, workshop-proposal, and conditional presenter-registration deadlines kept separate.
+- A repeated observation preserved `First_Seen` and `Content_Updated_At` while advancing
+  `Last_Seen`; record IDs remained unique.
 
 ## Milestone 5 — Discovery and personalization
 

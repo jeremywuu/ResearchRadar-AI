@@ -95,10 +95,29 @@ def test_json_store_is_idempotent_and_preserves_feedback_and_history(tmp_path: P
     assert saved["opportunity"]["opportunity_id"] == opportunity_id
     assert saved["opportunity"]["first_seen_at"] == NOW.isoformat()
     assert saved["opportunity"]["last_seen_at"] == (NOW + timedelta(days=7)).isoformat()
+    assert saved["opportunity"]["content_updated_at"] == NOW.isoformat()
     assert saved["feedback"]["saved"] is True
     assert saved["feedback"]["hidden"] is True
     assert saved["feedback"]["preference"] == "VERY_INTERESTED"
     assert saved["rank"] is None
+
+
+def test_content_updated_at_advances_only_for_material_content_changes(tmp_path: Path) -> None:
+    store = JsonOutputStore(tmp_path)
+    first = run_jobs_pipeline([job_record()], config_dir=PROJECT_ROOT / "config", observed_at=NOW)
+    store.write(first)
+    changed_raw = job_record() | {"title": "Senior AI Research Scientist"}
+    later_at = NOW + timedelta(days=7)
+    changed = run_jobs_pipeline(
+        [changed_raw], config_dir=PROJECT_ROOT / "config", observed_at=later_at
+    )
+    path = store.write(changed)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    opportunity = payload["records"][0]["opportunity"]
+    assert opportunity["first_seen_at"] == NOW.isoformat()
+    assert opportunity["last_seen_at"] == later_at.isoformat()
+    assert opportunity["content_updated_at"] == later_at.isoformat()
 
 
 def test_storage_outputs_valid_structured_json_for_each_category(tmp_path: Path) -> None:
