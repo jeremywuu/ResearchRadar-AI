@@ -9,9 +9,11 @@ import pytest
 
 from research_radar.live_integration import (
     DataMode,
+    InitialLiveSyncApproval,
     LiveDataError,
     RecommendationClassification,
     TargetEnvironment,
+    apply_initial_live_pilot_sync,
     configured_live_pilot_adapter,
     prepare_live_sheets_preview,
     validate_configured_data_mode,
@@ -460,3 +462,78 @@ def test_review_report_groups_records_and_preserves_required_fields(tmp_path: Pa
     assert "Career stage" in report
     assert ids["jobs"] in report
     assert "LOCAL_ARCHIVE" in report
+
+
+def test_initial_live_sync_applies_only_the_exact_approved_plan_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+
+    class PilotMemoryAdapter(InMemorySheetsAdapter):
+        settings = type(
+            "Settings",
+            (),
+            {"environment": "live-pilot", "spreadsheet_id": "pilot-id"},
+        )()
+
+        def get_spreadsheet_title(self) -> str:
+            return "ResearchRadar AI — LIVE PILOT"
+
+    adapter = PilotMemoryAdapter()
+    monkeypatch.setenv("GOOGLE_LIVE_PILOT_SPREADSHEET_ID", "pilot-id")
+    monkeypatch.setenv("RESEARCH_RADAR_SHEETS_ENV", "live-pilot")
+    monkeypatch.setenv("RESEARCH_RADAR_DATA_MODE", "live")
+    approval = InitialLiveSyncApproval(
+        opportunity_inserts={"jobs": 1, "phd": 1, "events": 1},
+        watchlist_inserts=38,
+        recommendation_counts={
+            RecommendationClassification.HIGH_PRIORITY: 3,
+            RecommendationClassification.RELEVANT: 0,
+            RecommendationClassification.NEEDS_REVIEW: 0,
+            RecommendationClassification.LOW_PRIORITY: 0,
+        },
+        provenance_valid=3,
+    )
+
+    result = apply_initial_live_pilot_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW + timedelta(days=1),
+        reference_date=date(2026, 10, 12),
+        adapter=adapter,
+        approval=approval,
+    )
+
+    assert result.applied_sheets == (
+        "Industry_Jobs",
+        "Change_Log",
+        "PhD_Opportunities",
+        "Events",
+        "Watchlist",
+        "Run_Logs",
+    )
+    assert len(adapter.read_worksheet("Industry_Jobs").rows) == 1
+    assert len(adapter.read_worksheet("PhD_Opportunities").rows) == 1
+    assert len(adapter.read_worksheet("Events").rows) == 1
+    assert len(adapter.read_worksheet("Watchlist").rows) == 38
+    assert len(adapter.read_worksheet("Run_Logs").rows) == 3
+    assert len(adapter.read_worksheet("Change_Log").rows) == 3
+
+    with pytest.raises(LiveDataError, match="approved initial plan"):
+        apply_initial_live_pilot_sync(
+            project_root=ROOT,
+            live_data_dir=live_dir,
+            review_dir=tmp_path / "review",
+            generated_at=NOW + timedelta(days=1, minutes=1),
+            reference_date=date(2026, 10, 12),
+            adapter=adapter,
+            approval=approval,
+        )
+    assert len(adapter.read_worksheet("Industry_Jobs").rows) == 1
+    assert len(adapter.read_worksheet("PhD_Opportunities").rows) == 1
+    assert len(adapter.read_worksheet("Events").rows) == 1
+    assert len(adapter.read_worksheet("Watchlist").rows) == 38
+    assert len(adapter.read_worksheet("Run_Logs").rows) == 3
+    assert len(adapter.read_worksheet("Change_Log").rows) == 3

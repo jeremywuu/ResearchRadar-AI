@@ -168,5 +168,7 @@ research-radar sheets-init --live --apply
 ```
 
 The command requires the exact live mode, live-pilot environment, configured pilot ID, title, and
-explicit flag. `sheets-sync --live --apply` remains disabled and requires a different future
-authorization.
+explicit flag. The first data synchronization was separately authorized and completed through a
+one-time exact-plan guard. Do not rerun `sheets-sync --live --apply`: with the initial rows present,
+the guard rejects the command before writing. Future recurring synchronization requires a new
+scoped authorization; read-only status and dry-run commands remain available.

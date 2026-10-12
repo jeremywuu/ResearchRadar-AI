@@ -176,7 +176,29 @@ Acceptance evidence:
 - The post-initialization live dry-run matched the offline plan: 13 jobs, one PhD programme, one
   event, and 38 watchlist targets proposed; all invalid/conflict counts were zero.
 - A final status read found zero opportunity, watchlist, feedback, run-log, and change-log records.
-  `sheets-sync --live --apply` remains blocked pending separate authorization.
+  Initial live synchronization required separate authorization.
+
+## Milestone 4C.3B — First verified LIVE PILOT synchronization
+
+Status: complete. General recurring live writes remain disabled.
+
+- Rebuild and validate the exact approved plan immediately before the one authorized write.
+- Require 13 jobs, one PhD opportunity, one event, 38 watchlist rows, zero invalid records and
+  conflicts, 27 valid provenance audits, and the approved recommendation distribution.
+- Reject fictional, provenance-blocked, `NEEDS_REVIEW`, and `LOW_PRIORITY` opportunity records.
+- Read back the workbook and perform a dry-run-only idempotency check after the write.
+
+Acceptance evidence:
+
+- The LIVE PILOT workbook contains 13 jobs, one PhD opportunity, one event, and 38 watchlist rows.
+- All 15 opportunity IDs are non-empty and unique, and all 15 official URLs use HTTPS.
+- The workbook contains three run logs and 15 unique new-opportunity change events.
+- `My_Feedback` contains no feedback records or validation conflicts; 1,999 formatted template rows
+  remain ignored and unchanged.
+- The post-write dry-run reports zero inserts and updates, with 13/1/1 opportunities and 38
+  watchlist rows unchanged.
+- The initial apply path now rejects a second invocation before writing; future recurring live
+  synchronization requires a new authorization and design review.
 
 ## Milestone 5 — Discovery and personalization
 

@@ -190,7 +190,12 @@ The dedicated live-pilot workbook is selected only through
 title `ResearchRadar AI — LIVE PILOT`. Initialization and data synchronization require separate
 authorizations. The completed worksheet-initialization authorization permits only explicit
 `sheets-init --live --apply` after revalidating data mode, environment, spreadsheet ID, and exact
-title. Opportunity synchronization apply remains disabled.
+title. The separately authorized initial opportunity synchronization permits only the exact
+reviewed plan: 13 jobs, one PhD opportunity, one event, and 38 watchlist rows, with 27 valid
+provenance audits and the approved 8/7/6/6 recommendation distribution. Any insert-count drift,
+update, conflict, invalid record, provenance failure, unapproved recommendation, fictional record,
+or second invocation is rejected before writing. This does not enable general live or production
+synchronization.
 
 ## Future capabilities
 

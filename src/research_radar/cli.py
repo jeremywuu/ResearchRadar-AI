@@ -13,6 +13,7 @@ from research_radar.live_integration import (
     DataMode,
     LiveDataError,
     TargetEnvironment,
+    apply_initial_live_pilot_sync,
     configured_live_pilot_adapter,
     prepare_live_sheets_preview,
     validate_configured_data_mode,
@@ -241,11 +242,22 @@ def main(argv: list[str] | None = None) -> int:
             observed_at = datetime.now(UTC)
             if args.live:
                 if args.apply:
-                    print(
-                        "Live Sheets apply is disabled in Milestone 4C.2; "
-                        "only --live --dry-run is allowed"
+                    pilot_adapter = _required_live_pilot_adapter(for_write=True)
+                    result = apply_initial_live_pilot_sync(
+                        project_root=args.project_root,
+                        live_data_dir=args.live_data_dir,
+                        review_dir=args.review_dir,
+                        generated_at=observed_at,
+                        reference_date=args.reference_date,
+                        adapter=pilot_adapter,
                     )
-                    return 1
+                    print("Google Sheets initial LIVE PILOT synchronization (apply)")
+                    for category, plan in result.preview.workbook.plans.items():
+                        _print_sync_plan(category, plan)
+                    _print_sync_plan("watchlist", result.preview.watchlist_plan)
+                    print("applied sheets: " + ", ".join(result.applied_sheets))
+                    print("approved initial synchronization applied once")
+                    return 0
                 validate_configured_data_mode(DataMode.LIVE)
                 pilot_adapter = configured_live_pilot_adapter()
                 preview = prepare_live_sheets_preview(

@@ -137,11 +137,48 @@ def test_cli_live_sheets_preview_is_offline_and_never_writes(
     assert "no writes performed" in output
 
 
-def test_cli_refuses_live_apply_before_loading_any_adapter(capsys: object) -> None:
-    exit_code = main(["sheets-sync", "--live", "--apply"])
+def test_cli_live_apply_uses_narrow_initial_sync_path(
+    monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    adapter = object()
+    preview = SimpleNamespace(
+        workbook=SimpleNamespace(
+            plans={
+                "jobs": SheetSyncPlan(sheet_name="Industry_Jobs"),
+                "phd": SheetSyncPlan(sheet_name="PhD_Opportunities"),
+                "events": SheetSyncPlan(sheet_name="Events"),
+            }
+        ),
+        watchlist_plan=SheetSyncPlan(sheet_name="Watchlist"),
+    )
+    calls: list[object] = []
 
-    assert exit_code == 1
-    assert "apply is disabled" in capsys.readouterr().out  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        "research_radar.cli._required_live_pilot_adapter",
+        lambda *, for_write: adapter if for_write else pytest.fail("write guard required"),
+    )
+
+    def apply_once(**kwargs: object) -> object:
+        calls.append(kwargs["adapter"])
+        return SimpleNamespace(preview=preview, applied_sheets=("Industry_Jobs", "Run_Logs"))
+
+    monkeypatch.setattr("research_radar.cli.apply_initial_live_pilot_sync", apply_once)
+
+    exit_code = main(
+        [
+            "sheets-sync",
+            "--live",
+            "--apply",
+            "--reference-date",
+            "2026-10-12",
+        ]
+    )
+
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert exit_code == 0
+    assert calls == [adapter]
+    assert "initial LIVE PILOT synchronization (apply)" in output
+    assert "approved initial synchronization applied once" in output
 
 
 def test_live_pilot_init_dry_run_uses_only_dedicated_adapter(

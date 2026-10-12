@@ -824,3 +824,39 @@ def sync_execution_report(
     if not dry_run:
         adapter.append_unique("Run_Logs", run_logs)
     return result
+
+
+def build_success_run_log_rows(
+    execution: ExecutionReport,
+    plans: dict[str, SheetSyncPlan],
+    *,
+    run_id: str,
+    timestamp: datetime,
+) -> list[dict[str, Any]]:
+    """Build success logs for already approved, preplanned category writes."""
+
+    rows: list[dict[str, Any]] = []
+    for category, pipeline_report in execution.pipelines.items():
+        plan = plans.get(category)
+        if plan is None or plan.invalid_records or plan.conflicts:
+            raise SheetsOperationError(
+                f"{category} has no safe approved plan for run-log generation"
+            )
+        rows.append(
+            _run_log_row(
+                run_id,
+                timestamp,
+                category,
+                pipeline_report.status.value,
+                pipeline_report.records_processed,
+                plan,
+                None,
+                fetched=pipeline_report.records_fetched,
+                accepted=pipeline_report.records_accepted,
+                rejected_errors=pipeline_report.validation_errors,
+                excluded=pipeline_report.records_excluded,
+                extraction_errors=pipeline_report.source_extraction_errors,
+                pipeline_errors=pipeline_report.pipeline_processing_errors,
+            )
+        )
+    return rows

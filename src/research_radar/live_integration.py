@@ -33,6 +33,7 @@ from research_radar.storage.sheets import (
     SheetsAdapter,
     SheetSyncPlan,
     WorkbookSyncReport,
+    build_success_run_log_rows,
     load_feedback,
     plan_sheet_sync,
     sync_execution_report,
@@ -121,6 +122,27 @@ class RecommendationReport:
 
 
 @dataclass(frozen=True)
+class InitialLiveSyncApproval:
+    opportunity_inserts: Mapping[str, int]
+    watchlist_inserts: int
+    recommendation_counts: Mapping[RecommendationClassification, int]
+    provenance_valid: int
+
+
+INITIAL_LIVE_PILOT_APPROVAL = InitialLiveSyncApproval(
+    opportunity_inserts={"jobs": 13, "phd": 1, "events": 1},
+    watchlist_inserts=38,
+    recommendation_counts={
+        RecommendationClassification.HIGH_PRIORITY: 8,
+        RecommendationClassification.RELEVANT: 7,
+        RecommendationClassification.NEEDS_REVIEW: 6,
+        RecommendationClassification.LOW_PRIORITY: 6,
+    },
+    provenance_valid=27,
+)
+
+
+@dataclass(frozen=True)
 class SourceCoverage:
     source_id: str
     records_returned: int
@@ -141,6 +163,12 @@ class LiveSheetsPreview:
     offline: bool
     target_environment: TargetEnvironment
     sheet_synced_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class InitialLiveSyncResult:
+    preview: LiveSheetsPreview
+    applied_sheets: tuple[str, ...]
 
 
 def validate_target_compatibility(
@@ -316,6 +344,139 @@ def prepare_live_sheets_preview(
         offline=offline,
         target_environment=environment,
     )
+
+
+def apply_initial_live_pilot_sync(
+    *,
+    project_root: Path,
+    live_data_dir: Path,
+    review_dir: Path,
+    generated_at: datetime,
+    reference_date: date,
+    adapter: SheetsAdapter,
+    approval: InitialLiveSyncApproval = INITIAL_LIVE_PILOT_APPROVAL,
+) -> InitialLiveSyncResult:
+    """Apply exactly one approved initial live-pilot plan; any plan drift stops the write."""
+
+    expected_id = validate_live_pilot_write_environment()
+    validate_live_pilot_identity(adapter, expected_spreadsheet_id=expected_id)
+    preview = prepare_live_sheets_preview(
+        project_root=project_root,
+        live_data_dir=live_data_dir,
+        review_dir=review_dir,
+        generated_at=generated_at,
+        reference_date=reference_date,
+        adapter=adapter,
+        target_environment=TargetEnvironment.LIVE_PILOT,
+    )
+    _validate_initial_live_pilot_plan(preview, approval)
+
+    recommended_execution = _recommended_execution(
+        preview.execution,
+        preview.provenance,
+        preview.recommendations,
+    )
+    run_id = f"live_initial_{generated_at.strftime('%Y%m%dT%H%M%SZ')}"
+    run_logs = build_success_run_log_rows(
+        recommended_execution,
+        preview.workbook.plans,
+        run_id=run_id,
+        timestamp=generated_at,
+    )
+    applied: list[str] = []
+    try:
+        for category in ("jobs", "phd", "events"):
+            plan = preview.workbook.plans[category]
+            adapter.apply_plan(plan, dry_run=False)
+            applied.append(plan.sheet_name)
+            if plan.change_log_rows and "Change_Log" not in applied:
+                applied.append("Change_Log")
+        adapter.apply_plan(preview.watchlist_plan, dry_run=False)
+        applied.append("Watchlist")
+        adapter.append_unique("Run_Logs", run_logs)
+        applied.append("Run_Logs")
+    except Exception as exc:
+        completed = ", ".join(applied) or "none"
+        raise LiveDataError(
+            f"LIVE PILOT synchronization failed after completed sheets: {completed}; "
+            "do not retry apply without inspecting the workbook"
+        ) from exc
+    return InitialLiveSyncResult(preview=preview, applied_sheets=tuple(applied))
+
+
+def _validate_initial_live_pilot_plan(
+    preview: LiveSheetsPreview,
+    approval: InitialLiveSyncApproval,
+) -> None:
+    problems: list[str] = []
+    actual_inserts = {
+        category: plan.insert_count for category, plan in preview.workbook.plans.items()
+    }
+    if actual_inserts != dict(approval.opportunity_inserts):
+        expected_inserts = dict(approval.opportunity_inserts)
+        problems.append(f"opportunity inserts are {actual_inserts}, expected {expected_inserts}")
+    if preview.watchlist_plan.insert_count != approval.watchlist_inserts:
+        problems.append(
+            f"watchlist inserts are {preview.watchlist_plan.insert_count}, "
+            f"expected {approval.watchlist_inserts}"
+        )
+    all_plans = (*preview.workbook.plans.values(), preview.watchlist_plan)
+    if any(plan.update_count or plan.unchanged_count for plan in all_plans):
+        problems.append("initial plan contains updates or unchanged records")
+    if any(plan.invalid_records or plan.conflicts for plan in all_plans):
+        problems.append("initial plan contains invalid records or conflicts")
+    if preview.workbook.failures:
+        problems.append(f"pipeline synchronization failures: {preview.workbook.failures}")
+    if preview.provenance.valid_count != approval.provenance_valid:
+        problems.append(
+            f"valid provenance count is {preview.provenance.valid_count}, "
+            f"expected {approval.provenance_valid}"
+        )
+    if preview.provenance.blocked_count:
+        problems.append(f"blocked provenance records: {preview.provenance.blocked_count}")
+    if preview.recommendations.counts != dict(approval.recommendation_counts):
+        problems.append(
+            f"recommendation counts are {preview.recommendations.counts}, "
+            f"expected {dict(approval.recommendation_counts)}"
+        )
+
+    execution_by_id = {
+        processed.opportunity.opportunity_id: processed
+        for report in preview.execution.pipelines.values()
+        for processed in report.records
+    }
+    audit_by_id = {record.record_id: record for record in preview.provenance.records}
+    decision_by_id = preview.recommendations.by_record_id
+    planned_ids = [
+        str(operation.row["Record_ID"])
+        for plan in preview.workbook.plans.values()
+        for operation in plan.inserts
+    ]
+    if len(planned_ids) != len(set(planned_ids)):
+        problems.append("planned opportunity Record_ID values are not unique")
+    for record_id in planned_ids:
+        processed = execution_by_id.get(record_id)
+        audit = audit_by_id.get(record_id)
+        decision = decision_by_id.get(record_id)
+        if processed is None or audit is None or decision is None:
+            problems.append(
+                f"planned Record_ID is not linked to the reviewed execution: {record_id}"
+            )
+            continue
+        opportunity = processed.opportunity
+        if opportunity.is_fictional:
+            problems.append(f"planned record is synthetic: {record_id}")
+        if opportunity.source_verification_status is not SourceVerificationStatus.VERIFIED_OFFICIAL:
+            problems.append(f"planned record source is not verified official: {record_id}")
+        if not audit.valid:
+            problems.append(f"planned record provenance is blocked: {record_id}")
+        if decision.classification not in {
+            RecommendationClassification.HIGH_PRIORITY,
+            RecommendationClassification.RELEVANT,
+        }:
+            problems.append(f"planned record recommendation is not approved: {record_id}")
+    if problems:
+        raise LiveDataError("approved initial plan validation failed: " + "; ".join(problems))
 
 
 def load_live_execution(

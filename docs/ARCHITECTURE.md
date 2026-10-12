@@ -193,8 +193,12 @@ demo writes. The dedicated pilot instead requires `RESEARCH_RADAR_SHEETS_ENV=liv
 TEST ID. Modifying CLI commands also require explicit `--apply`; dry-run and status do not write.
 The narrowly authorized pilot initializer additionally compares the adapter's spreadsheet ID with
 `GOOGLE_LIVE_PILOT_SPREADSHEET_ID` and rechecks the exact title before creating only missing
-approved worksheets. This authorization does not reach `sheets-sync --live --apply`, which remains
-blocked before adapter access.
+approved worksheets. The separately authorized initial sync uses the same identity gates, rebuilds
+the plan immediately before writing, and compares it with fixed approved insert, provenance, and
+recommendation counts. It prevalidates every planned ID as unique, non-fictional, officially
+verified, provenance-valid, and `HIGH_PRIORITY` or `RELEVANT`. Once rows exist, the plan contains
+unchanged records instead of the approved inserts, so the one-time path fails before writing.
+General recurring live and production writes remain disabled.
 
 Change event IDs are deterministic over category, record, change type, field, old value, and new
 value. Retrying the same plan therefore does not duplicate `Change_Log` rows. Run log IDs combine

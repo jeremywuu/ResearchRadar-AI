@@ -6,10 +6,11 @@ ResearchRadar AI is a personal academic and industry intelligence system for tra
 - Research-oriented industry jobs and future career targets
 - Academic conferences, workshops, exhibitions, and networking events
 
-Milestone 4C.2 adds deterministic recommendation review and prepares a separate LIVE PILOT
-workbook around the existing Google Sheets planner. Automated tests remain offline. Live records
-cannot target the synthetic TEST workbook, and live-pilot writes remain disabled pending explicit
-authorization.
+Milestone 4C.3B completed the separately authorized first LIVE PILOT synchronization. The
+one-time apply path accepts only the exact approved initial plan (13 jobs, one PhD opportunity,
+one event, and 38 watchlist rows) after rechecking provenance, recommendations, environment,
+spreadsheet identity, and title. Automated tests remain offline, and live records can never target
+the synthetic TEST workbook.
 
 ## Requirements
 
@@ -87,7 +88,10 @@ research-radar sheets-sync --live --dry-run
 
 `sheets-init --live --apply` is allowed only with the exact live data mode, live-pilot
 environment, configured pilot ID, workbook title, and explicit flag. It creates only missing
-approved worksheets. `sheets-sync --live --apply` remains disabled pending separate authorization.
+approved worksheets. The first `sheets-sync --live --apply` was separately authorized and is
+guarded by the immutable approved insert and recommendation counts. Because the pilot now contains
+those records, rerunning that apply command fails validation before writing; later synchronization
+requires a new scoped authorization and implementation change.
 
 Run tests:
 
