@@ -16,6 +16,7 @@ from research_radar.live_integration import (
     configured_live_pilot_adapter,
     prepare_live_sheets_preview,
     validate_configured_data_mode,
+    validate_live_pilot_identity,
 )
 from research_radar.sheets_demo import build_demo_sheets_adapter
 from research_radar.sheets_live import run_live_demo_sync
@@ -25,7 +26,12 @@ from research_radar.storage.google_sheets import (
     GoogleSheetsError,
     SheetsConfigurationError,
 )
-from research_radar.storage.sheets import SheetSchemaError, SheetSyncPlan, sync_execution_report
+from research_radar.storage.sheets import (
+    SheetsAdapter,
+    SheetSchemaError,
+    SheetSyncPlan,
+    sync_execution_report,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     sheets_init = subparsers.add_parser(
         "sheets-init", help="inspect or initialize the configured Google spreadsheet"
     )
+    sheets_init.add_argument(
+        "--live", action="store_true", help="target only the dedicated LIVE PILOT workbook"
+    )
     _add_write_mode(sheets_init)
 
     sheets_sync = subparsers.add_parser(
@@ -62,8 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
     sheets_sync.add_argument("--live-data-dir", type=Path, default=Path("data/live"))
     sheets_sync.add_argument("--review-dir", type=Path, default=Path("data/review"))
 
-    subparsers.add_parser(
+    sheets_status = subparsers.add_parser(
         "sheets-status", help="check Google Sheets connectivity and schema without writes"
+    )
+    sheets_status.add_argument(
+        "--live", action="store_true", help="check only the dedicated LIVE PILOT workbook"
     )
     collect = subparsers.add_parser(
         "collect", help="collect from explicitly selected verified official sources"
@@ -98,6 +110,15 @@ def _print_sync_plan(category: str, plan: SheetSyncPlan) -> None:
 
 def _live_adapter() -> GoogleSheetsAdapter:
     return GoogleSheetsAdapter.from_environment()
+
+
+def _required_live_pilot_adapter() -> SheetsAdapter:
+    validate_configured_data_mode(DataMode.LIVE)
+    adapter = configured_live_pilot_adapter()
+    if adapter is None:
+        raise LiveDataError("GOOGLE_LIVE_PILOT_SPREADSHEET_ID is required")
+    validate_live_pilot_identity(adapter)
+    return adapter
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -197,8 +218,16 @@ def main(argv: list[str] | None = None) -> int:
         )
     try:
         if args.command == "sheets-init":
-            plan = _live_adapter().initialize_workbook(apply=args.apply)
-            print(f"Google Sheets initialization ({'apply' if args.apply else 'dry-run'})")
+            if args.live and args.apply:
+                print(
+                    "LIVE PILOT initialization apply is disabled in Milestone 4C.2; "
+                    "request separate write authorization"
+                )
+                return 1
+            adapter = _required_live_pilot_adapter() if args.live else _live_adapter()
+            plan = adapter.initialize_workbook(apply=args.apply)
+            target = "LIVE PILOT" if args.live else "configured workbook"
+            print(f"Google Sheets {target} initialization ({'apply' if args.apply else 'dry-run'})")
             print(f"existing: {', '.join(plan.existing_sheets) or 'none'}")
             print(f"missing: {', '.join(plan.missing_sheets) or 'none'}")
             if plan.incompatible_headers:
@@ -214,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.live:
                 if args.apply:
                     print(
-                        "Live Sheets apply is disabled in Milestone 4C.1; "
+                        "Live Sheets apply is disabled in Milestone 4C.2; "
                         "only --live --dry-run is allowed"
                     )
                     return 1
@@ -241,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
                     f"provenance: valid={preview.provenance.valid_count}; "
                     f"blocked={preview.provenance.blocked_count}"
                 )
+                for classification, count in preview.recommendations.counts.items():
+                    print(f"recommendation {classification.value}: {count}")
                 for source in preview.coverage.values():
                     print(
                         f"coverage {source.source_id}: returned={source.records_returned}; "
@@ -275,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("no writes performed")
             return 1 if result.workbook.failures else 0
         if args.command == "sheets-status":
-            adapter = _live_adapter()
+            adapter = _required_live_pilot_adapter() if args.live else _live_adapter()
             status = adapter.get_status()
             print(f"Google Sheets status: connected; environment={adapter.settings.environment}")
             for name, worksheet in status.worksheets.items():

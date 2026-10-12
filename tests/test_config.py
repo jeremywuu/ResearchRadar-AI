@@ -5,6 +5,7 @@ import pytest
 from research_radar.config import (
     ConfigValidationError,
     load_all_configs,
+    load_career_preferences,
     load_research_interests,
     load_watchlist,
     load_yaml,
@@ -92,3 +93,16 @@ def test_research_interest_weights_must_be_complete_and_bounded(tmp_path: Path) 
 
     with pytest.raises(ConfigValidationError, match="every primary interest"):
         load_research_interests(path)
+
+
+def test_recommendation_rules_are_configured_and_valid() -> None:
+    preferences = load_career_preferences(PROJECT_ROOT / "config" / "career_preferences.yaml")
+    rules = preferences["recommendation_rules"]
+
+    assert set(rules["title_signals"]) == {
+        "high_priority",
+        "relevant",
+        "low_priority",
+        "needs_review",
+    }
+    assert rules["score_thresholds"]["high_priority"] > rules["score_thresholds"]["relevant"]

@@ -156,6 +156,12 @@ stable IDs and observation timestamps. Consequently, reading a cached snapshot d
 normalized values, rule-based interpretations, and unknown fields. Blocking provenance defects
 prevent a proposed write; important unknowns remain visible as manual-review flags.
 
+Milestone 4C.2 adds a deterministic recommendation layer after provenance validation. The rules
+are YAML-owned and return a classification plus an explanation without mutating source state,
+pipeline classification, score components, or feedback. The planner receives only verified
+`HIGH_PRIORITY` and `RELEVANT` records. Held and low-priority records remain in the full execution
+report and ignored local archive, so a future rule change can reconsider them.
+
 Opportunity sheets contain only agent-managed columns. `My_Feedback` is the canonical source for
 preference, saved, hidden, and personal notes. Feedback is loaded into `UserFeedback` for later
 personalization but is never included in an opportunity-sheet write plan.
@@ -182,8 +188,9 @@ bounded exponential backoff. Multiple API requests are not transactional: a data
 succeed before a later log append fails, so partial success is reported accurately.
 
 `RESEARCH_RADAR_SHEETS_ENV=test` is required for synthetic demo writes. Production mode refuses
-demo writes. Modifying CLI commands also require explicit `--apply`; dry-run and status do not
-write.
+demo writes. The dedicated pilot instead requires `RESEARCH_RADAR_SHEETS_ENV=live-pilot`,
+`RESEARCH_RADAR_DATA_MODE=live`, and `GOOGLE_LIVE_PILOT_SPREADSHEET_ID`; it never falls back to the
+TEST ID. Modifying CLI commands also require explicit `--apply`; dry-run and status do not write.
 
 Change event IDs are deterministic over category, record, change type, field, old value, and new
 value. Retrying the same plan therefore does not duplicate `Change_Log` rows. Run log IDs combine

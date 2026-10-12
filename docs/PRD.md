@@ -172,6 +172,24 @@ Loading cached JSON is not a source observation. It preserves `First_Seen`, `Las
 `Content_Updated_At`, and `Source_Retrieved_At`; `Sheet_Synced_At` remains absent during a dry
 run. Provenance-blocked records are shown for review but excluded from proposed sheet writes.
 
+## Milestone 4C.2 live-pilot review boundary
+
+Personal recommendation is independent of official-source verification. Verified opportunities
+receive one deterministic recommendation: `HIGH_PRIORITY`, `RELEVANT`, `NEEDS_REVIEW`, or
+`LOW_PRIORITY`. Rules are configured in `career_preferences.yaml`, use title evidence plus the
+existing research score, and emit a concise explanation. Recruiting, legal, sales, and unrelated
+business signals take precedence over an employer's general AI relevance.
+
+Only provenance-valid `HIGH_PRIORITY` and `RELEVANT` records enter the proposed Sheets plan.
+`NEEDS_REVIEW` records are held for explicit approval, while `LOW_PRIORITY` records remain in the
+local archive. Neither state deletes source records or changes source verification. Missing salary,
+education, language, funding, or deadlines remain unknown and visible in the review report.
+
+The dedicated live-pilot workbook is selected only through
+`GOOGLE_LIVE_PILOT_SPREADSHEET_ID`, must use the `live-pilot` environment, and must have the exact
+title `ResearchRadar AI — LIVE PILOT`. Both live-pilot initialization and data apply remain
+disabled until separately authorized.
+
 ## Future capabilities
 
 - PhD career intelligence

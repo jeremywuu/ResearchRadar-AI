@@ -150,6 +150,28 @@ Acceptance criteria:
 - Automated tests cover environment rejection, timestamp behavior, feedback preservation,
   provenance, coverage, conference dates, and dry-run safety.
 
+## Milestone 4C.2 — Live pilot preparation and data-quality review
+
+Status: complete. Worksheet initialization remains a separately authorized next step.
+
+- Add YAML-configured deterministic recommendation classifications and explanations.
+- Keep source validity, opportunity facts, career stage, scoring, and personal relevance separate.
+- Propose Sheets actions only for provenance-valid `HIGH_PRIORITY` and `RELEVANT` records.
+- Hold `NEEDS_REVIEW`; retain `LOW_PRIORITY` in the local archive.
+- Validate the dedicated workbook ID, exact LIVE PILOT title, and `live-pilot` environment.
+- Permit only read-only status, initialization dry-run, and synchronization dry-run.
+
+Acceptance evidence:
+
+- The 27-record review reports 8 high-priority, 7 relevant, 6 needs-review, and 6 low-priority
+  records; the proposed empty-workbook plan contains 15 opportunities.
+- Recruiter, counsel, sales, political-advocacy, recruiting, and GTM title signals are classified
+  low priority without changing their verified-source state or deleting their records.
+- PhD-required research roles remain eligible future career targets.
+- The provided LIVE PILOT workbook passed authentication, environment, and exact-title checks.
+- Read-only inspection found all seven approved worksheets missing; initialization requires a
+  separately authorized `--apply`, so no worksheet or data write was performed.
+
 ## Milestone 5 — Discovery and personalization
 
 - Add a configurable open-web search adapter.

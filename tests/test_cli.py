@@ -107,6 +107,7 @@ def test_cli_live_sheets_preview_is_offline_and_never_writes(
             plans={"jobs": SheetSyncPlan(sheet_name="Industry_Jobs")}, failures={}
         ),
         provenance=SimpleNamespace(valid_count=27, blocked_count=0),
+        recommendations=SimpleNamespace(counts={}),
         coverage={},
         review_report_path=review_path,
     )
@@ -138,4 +139,47 @@ def test_cli_refuses_live_apply_before_loading_any_adapter(capsys: object) -> No
     exit_code = main(["sheets-sync", "--live", "--apply"])
 
     assert exit_code == 1
+    assert "apply is disabled" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_live_pilot_init_dry_run_uses_only_dedicated_adapter(
+    monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    class PilotAdapter:
+        settings = SimpleNamespace(environment="live-pilot")
+
+        def get_spreadsheet_title(self) -> str:
+            return "ResearchRadar AI — LIVE PILOT"
+
+        def initialize_workbook(self, *, apply: bool) -> object:
+            assert apply is False
+            return SimpleNamespace(
+                existing_sheets=(),
+                missing_sheets=tuple(SHEET_SCHEMAS),
+                incompatible_headers={},
+            )
+
+    monkeypatch.setattr("research_radar.cli.configured_live_pilot_adapter", lambda: PilotAdapter())
+    monkeypatch.setattr(
+        "research_radar.cli._live_adapter",
+        lambda: pytest.fail("TEST spreadsheet adapter must not be loaded"),
+    )
+
+    exit_code = main(["sheets-init", "--live", "--dry-run"])
+
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert exit_code == 0
+    assert "LIVE PILOT" in output
+    assert "no writes performed" in output
+
+
+def test_live_pilot_init_apply_is_disabled_before_adapter_access(
+    monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    monkeypatch.setattr(
+        "research_radar.cli.configured_live_pilot_adapter",
+        lambda: pytest.fail("adapter must not be loaded before write refusal"),
+    )
+
+    assert main(["sheets-init", "--live", "--apply"]) == 1
     assert "apply is disabled" in capsys.readouterr().out  # type: ignore[attr-defined]

@@ -140,3 +140,26 @@ RUN_GOOGLE_SHEETS_LIVE_TEST=1 pytest -m live_google_sheets
 
 Future GitHub Actions authentication will use Workload Identity Federation so no long-lived
 service-account key needs to be stored. Deployment remains outside Milestone 3B.
+
+## Dedicated LIVE PILOT setup
+
+LIVE PILOT reuses the existing OAuth/ADC credentials but never reuses the TEST spreadsheet ID.
+Set the already-supported variables in the terminal that runs ResearchRadar:
+
+```bash
+export GOOGLE_LIVE_PILOT_SPREADSHEET_ID="<LIVE_PILOT_SPREADSHEET_ID>"
+export RESEARCH_RADAR_SHEETS_ENV="live-pilot"
+export RESEARCH_RADAR_DATA_MODE="live"
+```
+
+The workbook title must be exactly `ResearchRadar AI — LIVE PILOT`. These commands are read-only:
+
+```bash
+research-radar sheets-status --live
+research-radar sheets-init --live --dry-run
+research-radar sheets-sync --live --dry-run --reference-date 2026-10-12
+```
+
+If initialization reports missing worksheets, stop. Milestone 4C.2 disables
+`sheets-init --live --apply` and `sheets-sync --live --apply`; a subsequent explicit authorization
+is required before either structural or opportunity-data writes are enabled.

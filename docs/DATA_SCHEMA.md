@@ -228,6 +228,22 @@ must never advance `Last_Seen`. The four source/content timestamps remain distin
 - `Content_Updated_At`: latest material source-content change.
 - `Source_Retrieved_At`: retrieval that produced the cached record.
 
+## Recommendation review
+
+Recommendation is review metadata, not source evidence and not an opportunity status:
+
+```text
+record_id
+category
+classification  # HIGH_PRIORITY, RELEVANT, LOW_PRIORITY, NEEDS_REVIEW
+explanation
+```
+
+The decision does not alter stable identity, source verification, pipeline career stage, score
+components, or feedback. Only provenance-valid `HIGH_PRIORITY` and `RELEVANT` records enter the
+live-pilot plan. `NEEDS_REVIEW` maps to `HOLD_FOR_REVIEW`; `LOW_PRIORITY` maps to `LOCAL_ARCHIVE`.
+All four classes remain present in the local review report.
+
 ## Google Sheets ownership
 
 Opportunity facts, classifications, scores, URLs, verification timestamps, and statuses are

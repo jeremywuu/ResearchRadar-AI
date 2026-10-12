@@ -125,6 +125,7 @@ def load_career_preferences(path: Path) -> dict[str, Any]:
         "english_work_environment",
         "phd_target_cycles",
         "career_stages",
+        "recommendation_rules",
     }
     missing = sorted(required_keys - data.keys())
     if missing:
@@ -132,6 +133,36 @@ def load_career_preferences(path: Path) -> dict[str, Any]:
     _load_non_empty_string_list(path, "geographic_scope")
     _load_non_empty_string_list(path, "phd_target_cycles")
     _load_non_empty_string_list(path, "target_skills")
+    rules = data["recommendation_rules"]
+    if not isinstance(rules, dict):
+        raise ConfigValidationError(f"{path}: recommendation_rules must be a mapping")
+    signals = rules.get("title_signals")
+    expected_signals = {"high_priority", "relevant", "low_priority", "needs_review"}
+    if not isinstance(signals, dict) or set(signals) != expected_signals:
+        raise ConfigValidationError(
+            f"{path}: recommendation title_signals must contain "
+            + ", ".join(sorted(expected_signals))
+        )
+    for name, values in signals.items():
+        if (
+            not isinstance(values, list)
+            or not values
+            or not all(isinstance(value, str) and value.strip() for value in values)
+        ):
+            raise ConfigValidationError(
+                f"{path}: recommendation title_signals.{name} must be non-empty strings"
+            )
+    thresholds = rules.get("score_thresholds")
+    if not isinstance(thresholds, dict) or set(thresholds) != {"high_priority", "relevant"}:
+        raise ConfigValidationError(f"{path}: invalid recommendation score_thresholds")
+    high = thresholds["high_priority"]
+    relevant = thresholds["relevant"]
+    if not all(isinstance(value, int) and 0 <= value <= 100 for value in (high, relevant)):
+        raise ConfigValidationError(f"{path}: recommendation thresholds must be integers 0-100")
+    if high <= relevant:
+        raise ConfigValidationError(
+            f"{path}: high_priority threshold must exceed relevant threshold"
+        )
     return data
 
 

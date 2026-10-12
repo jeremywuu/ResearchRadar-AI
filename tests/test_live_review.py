@@ -10,6 +10,7 @@ import pytest
 from research_radar.live_integration import (
     DataMode,
     LiveDataError,
+    RecommendationClassification,
     TargetEnvironment,
     configured_live_pilot_adapter,
     prepare_live_sheets_preview,
@@ -335,7 +336,14 @@ def test_source_coverage_and_feedback_are_preserved(tmp_path: Path) -> None:
         "Personal_Notes": "Pilot review",
         "Updated_At": NOW.isoformat(),
     }
-    adapter = InMemorySheetsAdapter({"My_Feedback": [feedback_row]})
+
+    class PilotMemoryAdapter(InMemorySheetsAdapter):
+        settings = type("Settings", (), {"environment": "live-pilot"})()
+
+        def get_spreadsheet_title(self) -> str:
+            return "ResearchRadar AI — LIVE PILOT"
+
+    adapter = PilotMemoryAdapter({"My_Feedback": [feedback_row]})
 
     preview = prepare_live_sheets_preview(
         project_root=ROOT,
@@ -358,3 +366,96 @@ def test_source_coverage_and_feedback_are_preserved(tmp_path: Path) -> None:
     assert job.feedback.hidden is False
     assert job.feedback.notes == "Pilot review"
     assert job.score.components["research_relevance"] == 90.0
+
+
+def test_verified_source_and_low_career_relevance_are_independent(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    ids = _write_live_snapshots(
+        live_dir,
+        mutate=lambda raws: raws["jobs"].__setitem__("title", "Recruiter, AI Research"),
+    )
+
+    preview = prepare_live_sheets_preview(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+    )
+
+    job = preview.execution.pipelines["jobs"].records[0].opportunity
+    decision = preview.recommendations.by_record_id[ids["jobs"]]
+    assert job.source_verification_status.value == "VERIFIED_OFFICIAL"
+    assert decision.classification is RecommendationClassification.LOW_PRIORITY
+    assert "recruiter" in decision.explanation.casefold()
+    assert preview.workbook.plans["jobs"].insert_count == 0
+    assert len(preview.execution.pipelines["jobs"].records) == 1
+
+
+def test_phd_required_research_role_remains_recommended_future_target(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+
+    def future_role(raws: dict[str, dict[str, object]]) -> None:
+        raws["jobs"]["title"] = "Research Scientist, Reinforcement Learning"
+        raws["jobs"]["education_requirement"] = "PhD Required"
+        raws["jobs"]["research_areas"] = ["Reinforcement learning"]
+
+    ids = _write_live_snapshots(live_dir, mutate=future_role)
+    preview = prepare_live_sheets_preview(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+    )
+
+    job = preview.execution.pipelines["jobs"].records[0].opportunity
+    decision = preview.recommendations.by_record_id[ids["jobs"]]
+    assert job.classification.value == "FUTURE_CAREER_TARGET"
+    assert decision.classification is RecommendationClassification.HIGH_PRIORITY
+    assert preview.workbook.plans["jobs"].insert_count == 1
+
+
+def test_uncertain_recommendation_is_held_out_of_sheet_plan(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    ids = _write_live_snapshots(
+        live_dir,
+        mutate=lambda raws: raws["jobs"].__setitem__("title", "Product Manager, Research"),
+    )
+
+    preview = prepare_live_sheets_preview(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+    )
+
+    decision = preview.recommendations.by_record_id[ids["jobs"]]
+    assert decision.classification is RecommendationClassification.NEEDS_REVIEW
+    assert preview.workbook.plans["jobs"].insert_count == 0
+
+
+def test_review_report_groups_records_and_preserves_required_fields(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    ids = _write_live_snapshots(
+        live_dir,
+        mutate=lambda raws: raws["jobs"].__setitem__("title", "Recruiter, AI Research"),
+    )
+
+    preview = prepare_live_sheets_preview(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+    )
+    report = preview.review_report_path.read_text(encoding="utf-8")
+
+    assert "## A. Recommended for synchronization" in report
+    assert "## B. Needs manual review" in report
+    assert "## C. Low-priority archive" in report
+    assert "Recommendation" in report
+    assert "Career stage" in report
+    assert ids["jobs"] in report
+    assert "LOCAL_ARCHIVE" in report

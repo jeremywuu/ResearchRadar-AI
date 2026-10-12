@@ -6,10 +6,10 @@ ResearchRadar AI is a personal academic and industry intelligence system for tra
 - Research-oriented industry jobs and future career targets
 - Academic conferences, workshops, exhibitions, and networking events
 
-Milestone 3B adds a live Google Sheets API adapter around the Milestone 3A planner. Automated
-tests remain offline, and the first live write is gated behind authentication, the `test`
-environment, and an explicit `--apply` flag. It still does not search live sources, call an LLM,
-or deploy GitHub Actions.
+Milestone 4C.2 adds deterministic recommendation review and prepares a separate LIVE PILOT
+workbook around the existing Google Sheets planner. Automated tests remain offline. Live records
+cannot target the synthetic TEST workbook, and live-pilot writes remain disabled pending explicit
+authorization.
 
 ## Requirements
 
@@ -73,6 +73,21 @@ research-radar sheets-sync --demo --dry-run
 
 Live writes always require `--apply`. Do not use it until the dry-run output has been reviewed.
 
+Inspect the separately configured LIVE PILOT workbook without changing it:
+
+```bash
+export GOOGLE_LIVE_PILOT_SPREADSHEET_ID="<LIVE_PILOT_SPREADSHEET_ID>"
+export RESEARCH_RADAR_SHEETS_ENV="live-pilot"
+export RESEARCH_RADAR_DATA_MODE="live"
+
+research-radar sheets-status --live
+research-radar sheets-init --live --dry-run
+research-radar sheets-sync --live --dry-run
+```
+
+The init command only reports missing worksheets. `sheets-init --live --apply` and
+`sheets-sync --live --apply` remain disabled until a later, separately authorized step.
+
 Run tests:
 
 ```bash
@@ -96,7 +111,8 @@ ruff format .
 
 - `config/watchlist.yaml`: organizations, laboratories, programs, and events
 - `config/research_interests.yaml`: research interests and exploration policy
-- `config/career_preferences.yaml`: geography, career stage, language, and timing preferences
+- `config/career_preferences.yaml`: geography, career stage, language, timing, and transparent
+  recommendation rules
 - `config/salary_rules.yaml`: job scoring weights and aspirational compensation flags
 
 Watchlist membership is not evidence of a current opening. See `docs/PRD.md` for the

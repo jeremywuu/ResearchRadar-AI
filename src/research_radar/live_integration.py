@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from research_radar.config import load_career_preferences
 from research_radar.models import (
     AcademicEvent,
     CompensationDisclosureStatus,
@@ -50,6 +51,13 @@ class TargetEnvironment(StrEnum):
     PRODUCTION = "production"
 
 
+class RecommendationClassification(StrEnum):
+    HIGH_PRIORITY = "HIGH_PRIORITY"
+    RELEVANT = "RELEVANT"
+    LOW_PRIORITY = "LOW_PRIORITY"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+
+
 LIVE_PILOT_WORKBOOK_TITLE = "ResearchRadar AI — LIVE PILOT"
 
 
@@ -83,6 +91,32 @@ class ProvenanceReport:
 
 
 @dataclass(frozen=True)
+class RecommendationDecision:
+    record_id: str
+    category: str
+    classification: RecommendationClassification
+    explanation: str
+
+
+@dataclass(frozen=True)
+class RecommendationReport:
+    decisions: tuple[RecommendationDecision, ...]
+
+    @property
+    def by_record_id(self) -> dict[str, RecommendationDecision]:
+        return {decision.record_id: decision for decision in self.decisions}
+
+    @property
+    def counts(self) -> dict[RecommendationClassification, int]:
+        return {
+            classification: sum(
+                decision.classification is classification for decision in self.decisions
+            )
+            for classification in RecommendationClassification
+        }
+
+
+@dataclass(frozen=True)
 class SourceCoverage:
     source_id: str
     records_returned: int
@@ -95,6 +129,7 @@ class SourceCoverage:
 class LiveSheetsPreview:
     execution: ExecutionReport
     provenance: ProvenanceReport
+    recommendations: RecommendationReport
     workbook: WorkbookSyncReport
     coverage: dict[str, SourceCoverage]
     review_report_path: Path
@@ -114,7 +149,7 @@ def validate_target_compatibility(
     if data_mode is DataMode.LIVE and target_environment is TargetEnvironment.LIVE_PILOT:
         return
     if data_mode is DataMode.LIVE and target_environment is TargetEnvironment.PRODUCTION:
-        raise LiveDataError("live production synchronization is not enabled in Milestone 4C.1")
+        raise LiveDataError("live production synchronization is not enabled in Milestone 4C.2")
     if data_mode is DataMode.LIVE:
         raise LiveDataError("live data may target only the separate live-pilot environment")
     raise LiveDataError("synthetic data may target only the test environment")
@@ -150,6 +185,17 @@ def configured_live_pilot_adapter(
         )
     settings = GoogleSheetsSettings(spreadsheet_id, TargetEnvironment.LIVE_PILOT.value)
     return GoogleSheetsAdapter.from_settings(settings, environment=values)
+
+
+def validate_live_pilot_identity(adapter: SheetsAdapter) -> None:
+    configured_environment = getattr(getattr(adapter, "settings", None), "environment", None)
+    if configured_environment != TargetEnvironment.LIVE_PILOT.value:
+        raise LiveDataError("configured spreadsheet environment must be live-pilot")
+    read_title = getattr(adapter, "get_spreadsheet_title", None)
+    if read_title is None or read_title() != LIVE_PILOT_WORKBOOK_TITLE:
+        raise LiveDataError(
+            f"configured workbook title must be exactly {LIVE_PILOT_WORKBOOK_TITLE!r}"
+        )
 
 
 def prepare_live_sheets_preview(
@@ -189,7 +235,13 @@ def prepare_live_sheets_preview(
         feedback_by_id=feedback.feedback_by_id,
     )
     provenance = audit_provenance(execution)
-    safe_execution = _without_blocked_records(execution, provenance)
+    preferences = load_career_preferences(project_root / "config" / "career_preferences.yaml")
+    recommendations = classify_recommendations(
+        execution,
+        provenance,
+        preferences["recommendation_rules"],
+    )
+    safe_execution = _recommended_execution(execution, provenance, recommendations)
     workbook = sync_execution_report(
         safe_execution,
         adapter,
@@ -202,6 +254,7 @@ def prepare_live_sheets_preview(
         review_dir,
         execution=execution,
         provenance=provenance,
+        recommendations=recommendations,
         workbook=workbook,
         coverage=coverage,
         generated_at=generated_at,
@@ -211,6 +264,7 @@ def prepare_live_sheets_preview(
     return LiveSheetsPreview(
         execution=execution,
         provenance=provenance,
+        recommendations=recommendations,
         workbook=workbook,
         coverage=coverage,
         review_report_path=review_path,
@@ -492,15 +546,126 @@ def _rule_based_interpretations(processed: ProcessedOpportunity) -> tuple[str, .
     return tuple(values)
 
 
-def _without_blocked_records(
+def classify_recommendations(
     execution: ExecutionReport,
     provenance: ProvenanceReport,
+    rules: Mapping[str, Any],
+) -> RecommendationReport:
+    """Classify personal relevance without changing source verification state."""
+
+    provenance_by_id = {record.record_id: record for record in provenance.records}
+    thresholds = rules["score_thresholds"]
+    signals = rules["title_signals"]
+    decisions: list[RecommendationDecision] = []
+    for category, report in execution.pipelines.items():
+        for processed in report.records:
+            opportunity = processed.opportunity
+            audit = provenance_by_id[opportunity.opportunity_id]
+            if not audit.valid:
+                classification = RecommendationClassification.NEEDS_REVIEW
+                explanation = "Required provenance is incomplete; hold for manual review."
+            elif isinstance(opportunity, IndustryJob):
+                classification, explanation = _classify_job_recommendation(
+                    processed,
+                    signals=signals,
+                    thresholds=thresholds,
+                )
+            elif processed.score.final_score >= thresholds["high_priority"]:
+                classification = RecommendationClassification.HIGH_PRIORITY
+                explanation = (
+                    f"Deterministic category score {processed.score.final_score:.1f} meets the "
+                    "configured high-priority threshold."
+                )
+            elif processed.score.final_score >= thresholds["relevant"]:
+                classification = RecommendationClassification.RELEVANT
+                explanation = (
+                    f"Deterministic category score {processed.score.final_score:.1f} meets the "
+                    "configured relevance threshold."
+                )
+            else:
+                classification = RecommendationClassification.LOW_PRIORITY
+                explanation = (
+                    f"Deterministic category score {processed.score.final_score:.1f} is below "
+                    "the configured relevance threshold."
+                )
+            decisions.append(
+                RecommendationDecision(
+                    record_id=opportunity.opportunity_id,
+                    category=category,
+                    classification=classification,
+                    explanation=explanation,
+                )
+            )
+    return RecommendationReport(decisions=tuple(decisions))
+
+
+def _classify_job_recommendation(
+    processed: ProcessedOpportunity,
+    *,
+    signals: Mapping[str, Any],
+    thresholds: Mapping[str, Any],
+) -> tuple[RecommendationClassification, str]:
+    title = processed.opportunity.title.casefold()
+    research_score = processed.score.components["research_relevance"]
+    matched = {
+        name: next((phrase for phrase in phrases if phrase.casefold() in title), None)
+        for name, phrases in signals.items()
+    }
+    if matched["low_priority"]:
+        phrase = matched["low_priority"]
+        return (
+            RecommendationClassification.LOW_PRIORITY,
+            f"Title signal '{phrase}' indicates recruiting, legal, sales, or unrelated "
+            "business work.",
+        )
+    if matched["high_priority"] and research_score >= thresholds["high_priority"]:
+        phrase = matched["high_priority"]
+        return (
+            RecommendationClassification.HIGH_PRIORITY,
+            f"Title signal '{phrase}' and research relevance {research_score:.1f} match "
+            "priority interests.",
+        )
+    if matched["needs_review"]:
+        phrase = matched["needs_review"]
+        return (
+            RecommendationClassification.NEEDS_REVIEW,
+            f"Title signal '{phrase}' is adjacent or ambiguous and needs manual career-fit review.",
+        )
+    if matched["relevant"] and research_score >= thresholds["relevant"]:
+        phrase = matched["relevant"]
+        return (
+            RecommendationClassification.RELEVANT,
+            f"Title signal '{phrase}' and research relevance {research_score:.1f} meet "
+            "the relevance rule.",
+        )
+    if research_score >= thresholds["relevant"]:
+        return (
+            RecommendationClassification.NEEDS_REVIEW,
+            "Research score is relevant, but the title lacks a configured positive career signal.",
+        )
+    return (
+        RecommendationClassification.LOW_PRIORITY,
+        f"Research relevance {research_score:.1f} is below the configured threshold.",
+    )
+
+
+def _recommended_execution(
+    execution: ExecutionReport,
+    provenance: ProvenanceReport,
+    recommendations: RecommendationReport,
 ) -> ExecutionReport:
     valid_ids = {record.record_id for record in provenance.records if record.valid}
+    recommended_ids = {
+        decision.record_id
+        for decision in recommendations.decisions
+        if decision.classification
+        in {RecommendationClassification.HIGH_PRIORITY, RecommendationClassification.RELEVANT}
+    }
+    allowed_ids = valid_ids & recommended_ids
     reports: dict[str, PipelineReport] = {}
     for category, report in execution.pipelines.items():
         records = tuple(
-            item for item in report.records if item.opportunity.opportunity_id in valid_ids
+            item for item in report.records if item.opportunity.opportunity_id in allowed_ids
         )
         reports[category] = replace(report, records=records, records_accepted=len(records))
     return ExecutionReport(pipelines=reports)
@@ -536,11 +701,7 @@ def _source_coverage(
 
 
 def _validate_existing_workbook(adapter: SheetsAdapter) -> None:
-    read_title = getattr(adapter, "get_spreadsheet_title", None)
-    if read_title is not None and read_title() != LIVE_PILOT_WORKBOOK_TITLE:
-        raise LiveDataError(
-            f"configured workbook title must be exactly {LIVE_PILOT_WORKBOOK_TITLE!r}"
-        )
+    validate_live_pilot_identity(adapter)
     initialize = getattr(adapter, "initialize_workbook", None)
     if initialize is None:
         return
@@ -556,6 +717,7 @@ def _write_review_report(
     *,
     execution: ExecutionReport,
     provenance: ProvenanceReport,
+    recommendations: RecommendationReport,
     workbook: WorkbookSyncReport,
     coverage: dict[str, SourceCoverage],
     generated_at: datetime,
@@ -566,6 +728,8 @@ def _write_review_report(
     path = review_dir / "live_data_review.md"
     action_by_id = _planned_actions(workbook, provenance)
     audit_by_id = {record.record_id: record for record in provenance.records}
+    decision_by_id = recommendations.by_record_id
+    counts = recommendations.counts
     lines = [
         "# ResearchRadar Live Data Review",
         "",
@@ -576,6 +740,13 @@ def _write_review_report(
         + ("offline simulated empty workbook" if offline else "configured LIVE PILOT workbook")
         + "`",
         "Sheet_Synced_At: `None` (dry-run; no writes)",
+        "",
+        "## Recommendation summary",
+        "",
+        f"- HIGH_PRIORITY: {counts[RecommendationClassification.HIGH_PRIORITY]}",
+        f"- RELEVANT: {counts[RecommendationClassification.RELEVANT]}",
+        f"- NEEDS_REVIEW: {counts[RecommendationClassification.NEEDS_REVIEW]}",
+        f"- LOW_PRIORITY: {counts[RecommendationClassification.LOW_PRIORITY]}",
         "",
         "## Source coverage",
         "",
@@ -588,63 +759,81 @@ def _write_review_report(
             f"{source.records_considered} | {source.records_extracted} | "
             f"{source.records_accepted} |"
         )
-    lines.extend(
-        [
-            "",
-            "## Opportunity review",
-            "",
-            "| Title | Organization | Category | Research | PhD | Education | Salary | Dates | "
-            "Official URL | Verification | Missing | Action |",
-            "|---|---|---|---:|---:|---|---|---|---|---|---|---|",
-        ]
+    groups = (
+        (
+            "## A. Recommended for synchronization",
+            {
+                RecommendationClassification.HIGH_PRIORITY,
+                RecommendationClassification.RELEVANT,
+            },
+        ),
+        ("## B. Needs manual review", {RecommendationClassification.NEEDS_REVIEW}),
+        ("## C. Low-priority archive", {RecommendationClassification.LOW_PRIORITY}),
     )
-    for category, report in execution.pipelines.items():
-        for processed in report.records:
-            opportunity = processed.opportunity
-            audit = audit_by_id[opportunity.opportunity_id]
-            research, phd = _review_scores(processed)
-            education = (
-                opportunity.education_requirement.value
-                if isinstance(opportunity, IndustryJob)
-                else "—"
-            )
-            salary = (
-                opportunity.original_salary_text or "Not Disclosed"
-                if isinstance(opportunity, IndustryJob)
-                else "—"
-            )
-            verification = opportunity.source_verification_status.value
-            if audit.review_required:
-                verification += " · REVIEW"
-            missing = (*audit.blocking_issues, *audit.missing_important_fields)
-            lines.append(
-                "| "
-                + " | ".join(
-                    (
-                        _md(opportunity.title),
-                        _md(opportunity.organization),
-                        category,
-                        research,
-                        phd,
-                        _md(education),
-                        _md(salary),
-                        _md(_important_dates(opportunity)),
-                        _md(_opportunity_url(opportunity)),
-                        _md(verification),
-                        _md(", ".join(missing) or "None"),
-                        _review_action(
-                            action_by_id.get(opportunity.opportunity_id, "BLOCKED_REVIEW"),
-                            audit,
-                        ),
-                    )
+    for heading, classifications in groups:
+        lines.extend(
+            [
+                "",
+                heading,
+                "",
+                "| Record_ID | Title | Organization | Category | Research | PhD | Career stage | "
+                "Recommendation | Education | Salary | Official URL | Verification | Missing | "
+                "Proposed action | Explanation |",
+                "|---|---|---|---|---:|---:|---|---|---|---|---|---|---|---|---|",
+            ]
+        )
+        for category, report in execution.pipelines.items():
+            for processed in report.records:
+                opportunity = processed.opportunity
+                decision = decision_by_id[opportunity.opportunity_id]
+                if decision.classification not in classifications:
+                    continue
+                audit = audit_by_id[opportunity.opportunity_id]
+                research, phd = _review_scores(processed)
+                education = (
+                    opportunity.education_requirement.value
+                    if isinstance(opportunity, IndustryJob)
+                    else "—"
                 )
-                + " |"
-            )
+                salary = (
+                    opportunity.original_salary_text or "Not Disclosed"
+                    if isinstance(opportunity, IndustryJob)
+                    else "—"
+                )
+                missing = (*audit.blocking_issues, *audit.missing_important_fields)
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        (
+                            opportunity.opportunity_id,
+                            _md(opportunity.title),
+                            _md(opportunity.organization),
+                            category,
+                            research,
+                            phd,
+                            opportunity.classification.value,
+                            decision.classification.value,
+                            _md(education),
+                            _md(salary),
+                            _md(_opportunity_url(opportunity)),
+                            opportunity.source_verification_status.value,
+                            _md(", ".join(missing) or "None"),
+                            _proposed_action(
+                                action_by_id.get(opportunity.opportunity_id),
+                                audit,
+                                decision,
+                            ),
+                            _md(decision.explanation),
+                        )
+                    )
+                    + " |"
+                )
     lines.extend(["", "## Provenance details", ""])
     for category, report in execution.pipelines.items():
         for processed in report.records:
             opportunity = processed.opportunity
             audit = audit_by_id[opportunity.opportunity_id]
+            decision = decision_by_id[opportunity.opportunity_id]
             lines.extend(
                 [
                     f"### {_md(opportunity.title)} (`{opportunity.opportunity_id}`)",
@@ -652,6 +841,8 @@ def _write_review_report(
                     f"- Category: `{category}`",
                     f"- Adapter source: `{opportunity.adapter_source_id or 'missing'}`",
                     f"- Source retrieved: `{opportunity.source_retrieved_at}`",
+                    f"- Recommendation: `{decision.classification.value}`",
+                    f"- Recommendation explanation: {_md(decision.explanation)}",
                     f"- Source-stated facts: {_md('; '.join(audit.source_stated_facts) or 'None')}",
                     f"- Normalized information: {_md('; '.join(audit.normalized_information))}",
                     "- Rule-based interpretations: "
@@ -679,10 +870,18 @@ def _planned_actions(
     return actions
 
 
-def _review_action(action: str, audit: ProvenanceRecord) -> str:
-    if action == "BLOCKED_REVIEW":
-        return action
-    return f"{action} · REVIEW" if audit.review_required else action
+def _proposed_action(
+    planned_action: str | None,
+    audit: ProvenanceRecord,
+    decision: RecommendationDecision,
+) -> str:
+    if not audit.valid:
+        return "BLOCKED_PROVENANCE"
+    if decision.classification is RecommendationClassification.NEEDS_REVIEW:
+        return "HOLD_FOR_REVIEW"
+    if decision.classification is RecommendationClassification.LOW_PRIORITY:
+        return "LOCAL_ARCHIVE"
+    return planned_action or "PLAN_CONFLICT"
 
 
 def _opportunity_url(opportunity: Any) -> str:

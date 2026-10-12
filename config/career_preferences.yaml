@@ -31,6 +31,46 @@ career_stages:
 
 include_currently_ineligible_future_roles: true
 
+recommendation_rules:
+  score_thresholds:
+    high_priority: 85
+    relevant: 60
+  title_signals:
+    high_priority:
+      - "research engineer"
+      - "research scientist"
+      - "applied scientist"
+      - "reinforcement learning"
+      - "machine learning research"
+      - "ml/research engineer"
+      - "computational neuroscience"
+      - "cognitive neuroscience"
+      - "neural decoding"
+      - "brain-computer interface"
+      - "neurotechnology"
+      - "interpretability"
+      - "alignment"
+      - "safeguards research"
+    relevant:
+      - "data scientist"
+      - "research data platform"
+      - "research productivity"
+      - "quantitative behavioral"
+    low_priority:
+      - "gtm"
+      - "recruiter"
+      - "recruiting"
+      - "counsel"
+      - "legal"
+      - "sales"
+      - "political research"
+      - "policy advocacy"
+    needs_review:
+      - "product manager"
+      - "product management"
+      - "economist"
+      - "strategic advisory"
+
 target_skills:
   - "Python"
   - "Machine learning"
