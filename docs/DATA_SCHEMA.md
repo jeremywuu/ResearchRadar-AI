@@ -54,6 +54,8 @@ first_seen_at
 last_seen_at
 content_updated_at
 retrieved_at
+source_retrieved_at
+adapter_source_id
 source_verification_status
 opportunity_status
 classification
@@ -76,8 +78,11 @@ is_fictional
 
 `first_seen_at` is the earliest observation. `last_seen_at` is the most recent successful
 observation of that record. `content_updated_at` changes only when material source content changes;
-observation time alone is not a content change. `retrieved_at` identifies the retrieval producing
-the current incoming observation.
+observation time alone is not a content change. `source_retrieved_at` identifies the official
+source retrieval that produced the cached record, while `adapter_source_id` links it to the source
+metadata entry. `retrieved_at` is retained for backward compatibility and aliases the source
+retrieval time when no separate value is supplied. Loading cached JSON does not change any of
+these timestamps.
 
 ## IndustryJob
 
@@ -133,6 +138,12 @@ series_name?
 edition_year?
 starts_on?
 ends_on?
+overall_starts_on?
+overall_ends_on?
+main_meeting_starts_on?
+main_meeting_ends_on?
+workshop_starts_on?
+workshop_ends_on?
 submission_deadline?
 registration_deadline?
 workshop_submission_deadline?
@@ -142,6 +153,8 @@ event_url?
 
 A conditional presenter-registration deadline is not stored as the general registration
 deadline. Workshop-proposal and abstract-submission deadlines also remain separate.
+For multi-part conferences, `starts_on`/`ends_on` describe the overall event. Optional segmented
+fields preserve main-meeting and workshop ranges without changing the existing Sheets columns.
 
 ## UserFeedback
 
@@ -186,6 +199,7 @@ extraction_status         # SUCCESS, PARTIAL, FAILED, NO_MATCHES
 retrieved_at
 last_successful_retrieval_at?
 records_fetched
+records_considered
 http_statuses
 errors
 records
@@ -193,6 +207,26 @@ records
 
 These fields deliberately do not conflate official verification, functioning extraction, and
 confirmed opportunity availability.
+
+`records_fetched` is the source response population. `records_considered` is the bounded subset
+selected for detailed extraction, so accepted Anthropic research candidates are never described
+as the entire employer job market.
+
+## Live review provenance and timestamps
+
+Every live record proposed for Sheets must contain a stable ID, title, organization, category,
+valid official source URL, timezone-aware source retrieval time, verified-official source state,
+adapter source ID, source evidence, and `is_fictional=false`. Missing required provenance blocks
+the proposed write. Missing salary, working language, education, or other optional facts remains
+unknown and triggers review rather than fabrication.
+
+`Sheet_Synced_At` is an execution fact, not a source observation. It is absent for dry-runs and
+must never advance `Last_Seen`. The four source/content timestamps remain distinct:
+
+- `First_Seen`: earliest successful source observation.
+- `Last_Seen`: latest successful source observation.
+- `Content_Updated_At`: latest material source-content change.
+- `Source_Retrieved_At`: retrieval that produced the cached record.
 
 ## Google Sheets ownership
 

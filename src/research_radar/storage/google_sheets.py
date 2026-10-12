@@ -133,6 +133,22 @@ class GoogleSheetsAdapter:
         credential_provider: DefaultGoogleCredentialsProvider | None = None,
     ) -> GoogleSheetsAdapter:
         settings = GoogleSheetsSettings.from_environment(environment)
+        return cls.from_settings(
+            settings,
+            environment=environment,
+            credential_provider=credential_provider,
+        )
+
+    @classmethod
+    def from_settings(
+        cls,
+        settings: GoogleSheetsSettings,
+        *,
+        environment: Mapping[str, str] | None = None,
+        credential_provider: DefaultGoogleCredentialsProvider | None = None,
+    ) -> GoogleSheetsAdapter:
+        """Build an adapter for already validated, explicitly scoped settings."""
+
         provider = credential_provider or DefaultGoogleCredentialsProvider(environment)
         credentials = provider.get_credentials()
         try:
@@ -202,6 +218,20 @@ class GoogleSheetsAdapter:
             padded = list(raw_row) + [""] * max(0, len(headers) - len(raw_row))
             rows.append(dict(zip(headers, padded, strict=False)))
         return WorksheetData(headers=headers, rows=rows)
+
+    def get_spreadsheet_title(self) -> str:
+        """Read the configured workbook title without modifying Drive or Sheets state."""
+
+        response = self._execute(
+            lambda: self.service.spreadsheets().get(
+                spreadsheetId=self.settings.spreadsheet_id,
+                fields="properties(title)",
+            )
+        )
+        title = response.get("properties", {}).get("title")
+        if not isinstance(title, str) or not title:
+            raise GoogleSheetsError("configured spreadsheet did not return a title")
+        return title
 
     def read_record_ids(self, name: str) -> dict[str, int]:
         worksheet = self.read_worksheet(name)

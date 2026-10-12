@@ -75,6 +75,7 @@ def test_greenhouse_success_preserves_official_identity_and_evidence() -> None:
 
     assert result.health is SourceHealth.SUCCESS
     assert result.records_fetched == 2
+    assert result.records_considered == 1
     assert len(result.records) == 1
     record = result.records[0]
     assert record["official_job_id"] == "12345"
@@ -193,6 +194,12 @@ def test_cosyne_preserves_distinct_deadlines_and_edition() -> None:
     assert result.health is SourceHealth.SUCCESS
     record = result.records[0]
     assert record["edition_year"] == 2027
+    assert record["starts_on"] == "2027-03-11"
+    assert record["ends_on"] == "2027-03-16"
+    assert record["main_meeting_starts_on"] == "2027-03-11"
+    assert record["main_meeting_ends_on"] == "2027-03-14"
+    assert record["workshop_starts_on"] == "2027-03-15"
+    assert record["workshop_ends_on"] == "2027-03-16"
     assert record["submission_deadline"] == "2026-10-18"
     assert record["workshop_submission_deadline"] == "2026-11-01"
     assert record["registration_deadline"] is None

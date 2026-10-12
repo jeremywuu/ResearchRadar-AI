@@ -174,6 +174,7 @@ class AnthropicGreenhouseAdapter:
                 retrieved_at=observed_at,
                 records=records,
                 records_fetched=len(jobs),
+                records_considered=len(candidates),
                 errors=errors,
                 http_statuses=statuses,
                 last_successful_retrieval_at=observed_at,
@@ -224,6 +225,7 @@ class AnthropicGreenhouseAdapter:
             "source_type": "official_public_api",
             "source_evidence": evidence,
             "extraction_method": "greenhouse_job_board_api",
+            "adapter_source_id": self.source.source_id,
         }
 
 
@@ -264,6 +266,7 @@ class UclGatsbyPhdAdapter:
                 retrieved_at=observed_at,
                 records=[record],
                 records_fetched=1,
+                records_considered=1,
                 http_statuses=[response.status],
                 last_successful_retrieval_at=observed_at,
             )
@@ -326,6 +329,7 @@ class UclGatsbyPhdAdapter:
             "source_type": "official_html",
             "source_evidence": evidence,
             "extraction_method": "deterministic_html_patterns",
+            "adapter_source_id": self.source.source_id,
         }
 
 
@@ -395,6 +399,7 @@ class CosyneEventAdapter:
             retrieved_at=observed_at,
             records=[record],
             records_fetched=1,
+            records_considered=1,
             errors=errors,
             http_statuses=statuses,
             last_successful_retrieval_at=observed_at,
@@ -403,6 +408,7 @@ class CosyneEventAdapter:
     def _extract(self, pages: list[str]) -> dict[str, Any]:
         text = " ".join(_html_text(page)[0] for page in pages)
         main_dates = _main_meeting_dates(text)
+        workshop_dates = _workshop_dates(text)
         abstract = _find_deadline(text, r"abstract[^.]{0,100}?(?:deadline|due)", "October", 10)
         workshop = _find_deadline(
             text,
@@ -422,13 +428,17 @@ class CosyneEventAdapter:
             "January",
             1,
         )
-        if not main_dates:
+        if not main_dates or not workshop_dates:
             raise ValueError("COSYNE edition or main-meeting dates not found")
         start_day, end_day, date_year = main_dates
+        workshop_start_day, workshop_end_day, workshop_year = workshop_dates
+        if workshop_year != date_year:
+            raise ValueError("COSYNE main meeting and workshop years do not match")
         year = date_year
         evidence = [
             f"COSYNE edition: {year}",
             f"Main meeting: {start_day}-{end_day} March {date_year}",
+            f"Workshops: {workshop_start_day}-{workshop_end_day} March {workshop_year}",
         ]
         if abstract:
             evidence.append(f"Abstract deadline: {abstract.isoformat()}")
@@ -450,7 +460,13 @@ class CosyneEventAdapter:
             "country": "Canada",
             "location": "Montréal",
             "starts_on": date(date_year, 3, start_day).isoformat(),
-            "ends_on": date(date_year, 3, end_day).isoformat(),
+            "ends_on": date(workshop_year, 3, workshop_end_day).isoformat(),
+            "overall_starts_on": date(date_year, 3, start_day).isoformat(),
+            "overall_ends_on": date(workshop_year, 3, workshop_end_day).isoformat(),
+            "main_meeting_starts_on": date(date_year, 3, start_day).isoformat(),
+            "main_meeting_ends_on": date(date_year, 3, end_day).isoformat(),
+            "workshop_starts_on": date(workshop_year, 3, workshop_start_day).isoformat(),
+            "workshop_ends_on": date(workshop_year, 3, workshop_end_day).isoformat(),
             "submission_deadline": abstract.isoformat() if abstract else None,
             "workshop_submission_deadline": workshop.isoformat() if workshop else None,
             "registration_deadline": None,
@@ -462,6 +478,7 @@ class CosyneEventAdapter:
             "source_type": "official_html",
             "source_evidence": evidence,
             "extraction_method": "deterministic_html_patterns",
+            "adapter_source_id": self.source.source_id,
         }
 
 
@@ -477,6 +494,15 @@ def _main_meeting_dates(text: str) -> tuple[int, int, int] | None:
         re.IGNORECASE,
     )
     match = day_first or month_first
+    return tuple(int(value) for value in match.groups()) if match else None
+
+
+def _workshop_dates(text: str) -> tuple[int, int, int] | None:
+    match = re.search(
+        r"WORKSHOPS\s+(\d{1,2})\s*[–-]\s*(\d{1,2})\s+MARCH[,]?\s+(20\d{2})",
+        text,
+        re.IGNORECASE,
+    )
     return tuple(int(value) for value in match.groups()) if match else None
 
 

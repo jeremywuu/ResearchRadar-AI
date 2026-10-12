@@ -126,6 +126,30 @@ Completion evidence:
 - A repeated observation preserved `First_Seen` and `Content_Updated_At` while advancing
   `Last_Seen`; record IDs remained unique.
 
+## Milestone 4C.1 — Verified live-data Sheets review
+
+Status: complete.
+
+- Load only cached, non-fictional records from `data/live/`; no source refresh is implied.
+- Reuse the existing category pipelines and Sheets planner.
+- Audit required provenance and separate facts, normalization, rule interpretations, and unknowns.
+- Keep synthetic TEST, live pilot, and future production targets explicitly incompatible.
+- Produce an ignored Markdown review report and an offline dry-run when no pilot is configured.
+- Disable every live-data `--apply` path for this milestone.
+
+Acceptance criteria:
+
+- The 25 Anthropic jobs, one UCL Gatsby PhD programme, and one COSYNE edition retain stable IDs,
+  source evidence, and cached observation timestamps.
+- COSYNE overall, main-meeting, and workshop dates and its distinct deadlines remain separate.
+- Provenance-blocked records cannot enter a proposed Sheets write; optional unknowns remain review
+  flags and are never invented.
+- Source coverage reports returned, considered, extracted, and accepted counts separately.
+- The offline live preview proposes changes without Google credentials or writes and saves a
+  human-readable review report under ignored local data.
+- Automated tests cover environment rejection, timestamp behavior, feedback preservation,
+  provenance, coverage, conference dates, and dry-run safety.
+
 ## Milestone 5 — Discovery and personalization
 
 - Add a configurable open-web search adapter.

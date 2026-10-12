@@ -91,6 +91,7 @@ class JsonOutputStore:
             "first_seen_at",
             "last_seen_at",
             "retrieved_at",
+            "source_retrieved_at",
             "content_updated_at",
         }
         return {key: value for key, value in opportunity.items() if key not in ignored}

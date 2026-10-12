@@ -158,6 +158,20 @@ authorizes the first test write.
 mirror. `My_Feedback` remains the sole spreadsheet-owned input and is loaded before processing;
 automated writes never modify its preference, saved, hidden, notes, or timestamp fields.
 
+## Milestone 4C.1 live-data review boundary
+
+Cached records collected from verified official sources may pass through the existing
+normalization, scoring, deduplication, provenance audit, and Sheets planner. This milestone is
+review-only: live data cannot be applied to any spreadsheet. `synthetic` data targets only the
+existing `test` workbook; `live` data targets only a separate `live-pilot` environment. The
+pilot workbook must be explicitly configured and titled `ResearchRadar AI — LIVE PILOT`.
+Without that configuration, the CLI produces an entirely offline plan against an empty simulated
+workbook.
+
+Loading cached JSON is not a source observation. It preserves `First_Seen`, `Last_Seen`,
+`Content_Updated_At`, and `Source_Retrieved_At`; `Sheet_Synced_At` remains absent during a dry
+run. Provenance-blocked records are shown for review but excluded from proposed sheet writes.
+
 ## Future capabilities
 
 - PhD career intelligence

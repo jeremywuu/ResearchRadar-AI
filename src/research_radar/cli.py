@@ -9,6 +9,14 @@ from pathlib import Path
 from research_radar.collectors.service import collect_live
 from research_radar.config import ConfigValidationError, load_all_configs
 from research_radar.demo import process_demo, run_demo
+from research_radar.live_integration import (
+    DataMode,
+    LiveDataError,
+    TargetEnvironment,
+    configured_live_pilot_adapter,
+    prepare_live_sheets_preview,
+    validate_configured_data_mode,
+)
 from research_radar.sheets_demo import build_demo_sheets_adapter
 from research_radar.sheets_live import run_live_demo_sync
 from research_radar.storage.google_auth import SheetsAuthenticationError
@@ -43,12 +51,16 @@ def build_parser() -> argparse.ArgumentParser:
     _add_write_mode(sheets_init)
 
     sheets_sync = subparsers.add_parser(
-        "sheets-sync", help="synchronize fictional demo records with Google Sheets"
+        "sheets-sync", help="preview or synchronize selected data with Google Sheets"
     )
-    sheets_sync.add_argument("--demo", action="store_true", required=True)
+    data_mode = sheets_sync.add_mutually_exclusive_group(required=True)
+    data_mode.add_argument("--demo", action="store_true", help="use fictional demo records")
+    data_mode.add_argument("--live", action="store_true", help="use cached verified live records")
     _add_write_mode(sheets_sync)
     sheets_sync.add_argument("--project-root", type=Path, default=Path.cwd())
     sheets_sync.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
+    sheets_sync.add_argument("--live-data-dir", type=Path, default=Path("data/live"))
+    sheets_sync.add_argument("--review-dir", type=Path, default=Path("data/review"))
 
     subparsers.add_parser(
         "sheets-status", help="check Google Sheets connectivity and schema without writes"
@@ -199,6 +211,46 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "sheets-sync":
             observed_at = datetime.now(UTC)
+            if args.live:
+                if args.apply:
+                    print(
+                        "Live Sheets apply is disabled in Milestone 4C.1; "
+                        "only --live --dry-run is allowed"
+                    )
+                    return 1
+                validate_configured_data_mode(DataMode.LIVE)
+                pilot_adapter = configured_live_pilot_adapter()
+                preview = prepare_live_sheets_preview(
+                    project_root=args.project_root,
+                    live_data_dir=args.live_data_dir,
+                    review_dir=args.review_dir,
+                    generated_at=observed_at,
+                    reference_date=args.reference_date,
+                    adapter=pilot_adapter,
+                    target_environment=TargetEnvironment.LIVE_PILOT,
+                )
+                target = (
+                    "offline simulated empty workbook"
+                    if preview.offline
+                    else "configured LIVE PILOT workbook"
+                )
+                print(f"Google Sheets live-data preview (dry-run; target={target})")
+                for category, plan in preview.workbook.plans.items():
+                    _print_sync_plan(category, plan)
+                print(
+                    f"provenance: valid={preview.provenance.valid_count}; "
+                    f"blocked={preview.provenance.blocked_count}"
+                )
+                for source in preview.coverage.values():
+                    print(
+                        f"coverage {source.source_id}: returned={source.records_returned}; "
+                        f"considered={source.records_considered}; "
+                        f"extracted={source.records_extracted}; "
+                        f"accepted={source.records_accepted}"
+                    )
+                print(f"review report: {preview.review_report_path}")
+                print("no writes performed")
+                return 1 if preview.workbook.failures or preview.provenance.blocked_count else 0
             result = run_live_demo_sync(
                 _live_adapter(),
                 project_root=args.project_root,
@@ -247,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
         SheetSchemaError,
         SheetsAuthenticationError,
         SheetsConfigurationError,
+        LiveDataError,
     ) as exc:
         print(f"Google Sheets operation failed: {exc}")
         return 1

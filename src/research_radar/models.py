@@ -187,7 +187,9 @@ class Opportunity:
     source_type: str | None = None
     source_evidence: tuple[str, ...] = ()
     extraction_method: str | None = None
+    adapter_source_id: str | None = None
     is_fictional: bool = False
+    source_retrieved_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.title.strip() or not self.organization.strip():
@@ -199,6 +201,8 @@ class Opportunity:
             self.content_updated_at = self.first_seen_at
         if self.retrieved_at is None:
             self.retrieved_at = self.last_seen_at
+        if self.source_retrieved_at is None:
+            self.source_retrieved_at = self.retrieved_at
         if self.official_source_url:
             _validate_http_url(self.official_source_url, "official_source_url")
         if not self.source_urls:
@@ -272,6 +276,12 @@ class AcademicEvent(Opportunity):
     registration_deadline: date | None = None
     workshop_submission_deadline: date | None = None
     presenter_registration_deadline: date | None = None
+    overall_starts_on: date | None = None
+    overall_ends_on: date | None = None
+    main_meeting_starts_on: date | None = None
+    main_meeting_ends_on: date | None = None
+    workshop_starts_on: date | None = None
+    workshop_ends_on: date | None = None
     academic_event_type: AcademicEventType = AcademicEventType.UNKNOWN
 
 

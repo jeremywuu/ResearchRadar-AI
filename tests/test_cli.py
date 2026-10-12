@@ -5,7 +5,7 @@ import pytest
 
 from research_radar.cli import main
 from research_radar.storage.google_sheets import SheetsConfigurationError
-from research_radar.storage.sheets import SHEET_SCHEMAS
+from research_radar.storage.sheets import SHEET_SCHEMAS, SheetSyncPlan
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -95,3 +95,47 @@ def test_live_configuration_errors_are_human_readable(
 
     assert main(["sheets-status"]) == 1
     assert "GOOGLE_SPREADSHEET_ID is required" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_cli_live_sheets_preview_is_offline_and_never_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: object
+) -> None:
+    review_path = tmp_path / "review.md"
+    preview = SimpleNamespace(
+        offline=True,
+        workbook=SimpleNamespace(
+            plans={"jobs": SheetSyncPlan(sheet_name="Industry_Jobs")}, failures={}
+        ),
+        provenance=SimpleNamespace(valid_count=27, blocked_count=0),
+        coverage={},
+        review_report_path=review_path,
+    )
+    monkeypatch.setattr("research_radar.cli.configured_live_pilot_adapter", lambda: None)
+    monkeypatch.setattr("research_radar.cli.prepare_live_sheets_preview", lambda **_: preview)
+
+    exit_code = main(
+        [
+            "sheets-sync",
+            "--live",
+            "--dry-run",
+            "--project-root",
+            str(PROJECT_ROOT),
+            "--live-data-dir",
+            str(tmp_path / "live"),
+            "--review-dir",
+            str(tmp_path / "review"),
+        ]
+    )
+
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert exit_code == 0
+    assert "offline simulated empty workbook" in output
+    assert "provenance: valid=27; blocked=0" in output
+    assert "no writes performed" in output
+
+
+def test_cli_refuses_live_apply_before_loading_any_adapter(capsys: object) -> None:
+    exit_code = main(["sheets-sync", "--live", "--apply"])
+
+    assert exit_code == 1
+    assert "apply is disabled" in capsys.readouterr().out  # type: ignore[attr-defined]

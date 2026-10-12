@@ -8,6 +8,11 @@ retrieval URL/method, and source-verification state. Collection returns `SourceC
 with source health, extraction status, retrieval timestamps, counts, HTTP statuses, errors, and
 bounded extracted records.
 
+Coverage counters have distinct meanings: `records_fetched` is the population returned by the
+source, `records_considered` is the bounded filter result considered for detail extraction,
+`records_extracted` is the parsed candidate count, and `records_accepted` is the downstream
+pipeline count. These must not be collapsed into a claim about total source coverage.
+
 The states are independent:
 
 - `VERIFIED_OFFICIAL` means the organization controls or explicitly links the source.
@@ -40,6 +45,9 @@ The adapter reads only robots-permitted public HTML from the official COSYNE hom
 workshop-call pages. Edition, meeting dates, abstract deadline, workshop-proposal deadline, and a
 conditional presenter-registration deadline are stored with distinct meanings. Squarespace API
 or JSON routes disallowed by robots policy are not used.
+
+The 2027 model stores March 11–16 as the overall conference, March 11–14 as the main meeting,
+and March 15–16 as the workshops. Annual editions retain distinct stable identities.
 
 ## Retrieval policy
 

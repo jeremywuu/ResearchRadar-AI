@@ -126,6 +126,36 @@ extracted, accepted, validation-rejected, intentionally excluded, source-extract
 pipeline-error counts. Intentionally irrelevant or language-incompatible records are exclusions,
 not technical errors.
 
+## Live-data review flow
+
+```text
+data/live/*.json + source_metadata.json
+             │
+             ▼
+restore cached identity and observation timestamps
+             │
+             ▼
+existing category pipelines ─► provenance audit ─► safe records only
+                                                   │
+                                                   ▼
+                 empty in-memory workbook or explicit LIVE PILOT workbook
+                                                   │
+                                                   ▼
+                                 dry-run Sheets plan + Markdown review report
+```
+
+`research-radar sheets-sync --live --dry-run` is the only enabled live-data Sheets command in
+Milestone 4C.1. It never falls back to `GOOGLE_SPREADSHEET_ID`. A configured pilot uses
+`GOOGLE_LIVE_PILOT_SPREADSHEET_ID`, requires `RESEARCH_RADAR_SHEETS_ENV=live-pilot`, and must
+have the exact workbook title `ResearchRadar AI — LIVE PILOT`. Otherwise the command plans
+against an empty in-memory workbook without Google credentials or network access.
+
+The loader reconstructs records through the existing pipelines but then restores their stored
+stable IDs and observation timestamps. Consequently, reading a cached snapshot does not advance
+`Last_Seen` or manufacture a new source observation. The audit distinguishes source-stated facts,
+normalized values, rule-based interpretations, and unknown fields. Blocking provenance defects
+prevent a proposed write; important unknowns remain visible as manual-review flags.
+
 Opportunity sheets contain only agent-managed columns. `My_Feedback` is the canonical source for
 preference, saved, hidden, and personal notes. Feedback is loaded into `UserFeedback` for later
 personalization but is never included in an opportunity-sheet write plan.

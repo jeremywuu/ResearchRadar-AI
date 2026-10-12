@@ -153,6 +153,16 @@ def test_adapter_reads_rows_with_the_declared_headers() -> None:
     assert service.calls[0][1]["spreadsheetId"] == "sheet-id"
 
 
+def test_adapter_reads_spreadsheet_title_without_writing() -> None:
+    service = FakeSheetsService(
+        {"spreadsheets.get": [{"properties": {"title": "ResearchRadar AI — LIVE PILOT"}}]}
+    )
+    adapter = GoogleSheetsAdapter(GoogleSheetsSettings("pilot-id", "live-pilot"), service=service)
+
+    assert adapter.get_spreadsheet_title() == "ResearchRadar AI — LIVE PILOT"
+    assert [name for name, _ in service.calls] == ["spreadsheets.get"]
+
+
 def test_missing_spreadsheet_has_a_clear_error() -> None:
     service = FakeSheetsService({"values.get": [FakeHttpError(404)]})
     adapter = GoogleSheetsAdapter(

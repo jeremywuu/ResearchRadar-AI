@@ -130,11 +130,15 @@ def _provenance(raw: dict[str, Any], *, observed_at: datetime, source_url: str) 
     return {
         "content_updated_at": observed_at,
         "retrieved_at": observed_at,
+        "source_retrieved_at": observed_at,
         "official_source_url": official_source_url,
         "source_type": str(raw["source_type"]).strip() if raw.get("source_type") else None,
         "source_evidence": tuple(item.strip() for item in evidence if item.strip()),
         "extraction_method": str(raw["extraction_method"]).strip()
         if raw.get("extraction_method")
+        else None,
+        "adapter_source_id": str(raw["adapter_source_id"]).strip()
+        if raw.get("adapter_source_id")
         else None,
         "is_fictional": _record_kind(raw),
     }
@@ -465,6 +469,14 @@ def normalize_event(raw: dict[str, Any], *, observed_at: datetime) -> AcademicEv
         presenter_registration_deadline=parse_date(
             raw.get("presenter_registration_deadline"), "presenter_registration_deadline"
         ),
+        overall_starts_on=parse_date(raw.get("overall_starts_on"), "overall_starts_on"),
+        overall_ends_on=parse_date(raw.get("overall_ends_on"), "overall_ends_on"),
+        main_meeting_starts_on=parse_date(
+            raw.get("main_meeting_starts_on"), "main_meeting_starts_on"
+        ),
+        main_meeting_ends_on=parse_date(raw.get("main_meeting_ends_on"), "main_meeting_ends_on"),
+        workshop_starts_on=parse_date(raw.get("workshop_starts_on"), "workshop_starts_on"),
+        workshop_ends_on=parse_date(raw.get("workshop_ends_on"), "workshop_ends_on"),
         deadline=parse_date(raw.get("submission_deadline"), "submission_deadline"),
         event_url=official_url,
         series_name=series_name,
