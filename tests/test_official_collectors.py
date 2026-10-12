@@ -12,7 +12,10 @@ from research_radar.collectors.base import SourceDescriptor
 from research_radar.collectors.http import HttpClient, HttpResponse, HttpRetrievalError
 from research_radar.collectors.official import (
     AnthropicGreenhouseAdapter,
+    Ccn2027EventAdapter,
+    CmuCognitiveNeuroscienceProgramAdapter,
     CosyneEventAdapter,
+    NeuroelectricsCareersAdapter,
     UclGatsbyPhdAdapter,
 )
 from research_radar.collectors.service import collect_live
@@ -282,6 +285,87 @@ def test_cosyne_preserves_distinct_deadlines_and_edition() -> None:
     assert record["workshop_submission_deadline"] == "2026-11-01"
     assert record["registration_deadline"] is None
     assert record["presenter_registration_deadline"] == "2027-01-31"
+
+
+def test_ccn_2027_extracts_edition_and_preserves_unknown_deadline() -> None:
+    html = """
+    <h1>10th Annual Conference Cognitive Computational Neuroscience</h1>
+    <p>July 26-29, 2027</p><p>Edinburgh, UK</p>
+    <p>Developing cognitive- or neural-level models of perception and cognition.</p>
+    """
+    transport = html_transport(Ccn2027EventAdapter.source.retrieval_url, html)
+
+    result = Ccn2027EventAdapter(HttpClient(transport=transport)).collect(observed_at=NOW)
+
+    assert result.health is SourceHealth.SUCCESS
+    assert result.records[0]["edition_year"] == 2027
+    assert result.records[0]["starts_on"] == "2027-07-26"
+    assert result.records[0]["submission_deadline"] is None
+    assert "Computational cognitive neuroscience" in result.records[0]["research_areas"]
+
+
+def test_cmu_programme_profile_is_not_open_admission_without_cycle_evidence() -> None:
+    pages = {
+        CmuCognitiveNeuroscienceProgramAdapter._PAGES[0]: (
+            "<h1>Cognitive Neuroscience Graduate Program</h1>"
+            "<p>Study mind, brain, behavior and computational science using fMRI and EEG.</p>"
+        ),
+        CmuCognitiveNeuroscienceProgramAdapter._PAGES[1]: (
+            "<h1>Admissions</h1><p>The general deadline is December 1.</p>"
+        ),
+        CmuCognitiveNeuroscienceProgramAdapter._PAGES[2]: (
+            "<p>All students receive full support including stipend and tuition.</p>"
+        ),
+    }
+    routes: dict[str, HttpResponse | Exception] = {
+        "https://www.cmu.edu/robots.txt": response(
+            "https://www.cmu.edu/robots.txt", "User-agent: *\nAllow: /\n"
+        )
+    }
+    routes.update({url: response(url, body) for url, body in pages.items()})
+
+    result = CmuCognitiveNeuroscienceProgramAdapter(
+        HttpClient(transport=RouteTransport(routes))
+    ).collect(observed_at=NOW)
+
+    assert result.health is SourceHealth.SUCCESS_NO_MATCHES
+    assert result.records == []
+    assert len(result.informational_profiles) == 1
+    profile = result.informational_profiles[0]
+    assert profile["actionable_opportunity"] is False
+    assert profile["admission_cycle"] is None
+    assert profile["application_deadline"] is None
+    assert profile["recruitment_status"] == "FUTURE_CYCLE_NOT_ANNOUNCED"
+
+
+def test_neuroelectrics_talent_pool_is_not_specific_open_vacancy() -> None:
+    careers_url = NeuroelectricsCareersAdapter.source.retrieval_url
+    board_url = "https://neuroelectrics.jobs.personio.com/?language=en"
+    routes = {
+        "https://www.neuroelectrics.com/robots.txt": response(
+            "https://www.neuroelectrics.com/robots.txt", "User-agent: *\nAllow: /\n"
+        ),
+        careers_url: response(
+            careers_url,
+            '<a href="https://neuroelectrics.jobs.personio.com/">See open positions</a>',
+        ),
+        "https://neuroelectrics.jobs.personio.com/robots.txt": response(
+            "https://neuroelectrics.jobs.personio.com/robots.txt",
+            "User-agent: *\nAllow: /\n",
+        ),
+        board_url: response(
+            board_url,
+            '<a href="/job/814039">TALENT POOL (PERMANENT POSITION)</a>',
+        ),
+    }
+
+    result = NeuroelectricsCareersAdapter(HttpClient(transport=RouteTransport(routes))).collect(
+        observed_at=NOW
+    )
+
+    assert result.health is SourceHealth.SUCCESS_NO_MATCHES
+    assert result.records == []
+    assert result.informational_profiles[0]["profile_type"] == "TALENT_POOL"
 
 
 def test_source_descriptor_rejects_invalid_urls() -> None:

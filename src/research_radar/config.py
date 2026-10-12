@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -283,13 +284,56 @@ def load_salary_rules(path: Path) -> dict[str, Any]:
     return data
 
 
+def load_source_expansion(path: Path) -> dict[str, Any]:
+    data = load_yaml(path)
+    _require_version_one(data, path)
+    allowed_statuses = {"IMPLEMENTED", "VERIFIED_CANDIDATE"}
+    source_ids: set[str] = set()
+    for group_name in ("pilot_sources", "backlog"):
+        entries = data.get(group_name)
+        if not isinstance(entries, list):
+            raise ConfigValidationError(f"{path}: {group_name} must be a list")
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise ConfigValidationError(f"{path}: {group_name}[{index}] must be a mapping")
+            required = ("source_id", "name", "category", "official_url", "implementation_status")
+            if not all(
+                isinstance(entry.get(field), str) and entry[field].strip() for field in required
+            ):
+                raise ConfigValidationError(
+                    f"{path}: {group_name}[{index}] has missing string fields"
+                )
+            parsed = urlparse(entry["official_url"])
+            if parsed.scheme != "https" or not parsed.netloc:
+                raise ConfigValidationError(
+                    f"{path}: {group_name}[{index}].official_url must be HTTPS"
+                )
+            if entry["implementation_status"] not in allowed_statuses:
+                raise ConfigValidationError(
+                    f"{path}: {group_name}[{index}] has invalid implementation_status"
+                )
+            if group_name == "pilot_sources" and entry["implementation_status"] != "IMPLEMENTED":
+                raise ConfigValidationError(f"{path}: pilot_sources[{index}] must be IMPLEMENTED")
+            if group_name == "backlog" and entry["implementation_status"] != "VERIFIED_CANDIDATE":
+                raise ConfigValidationError(f"{path}: backlog[{index}] must be VERIFIED_CANDIDATE")
+            source_id = entry["source_id"]
+            if source_id in source_ids:
+                raise ConfigValidationError(f"{path}: duplicate source_id {source_id}")
+            source_ids.add(source_id)
+    return data
+
+
 def load_all_configs(config_dir: Path) -> dict[str, int]:
     watchlist = load_watchlist(config_dir / "watchlist.yaml")
     interests = load_research_interests(config_dir / "research_interests.yaml")
     load_career_preferences(config_dir / "career_preferences.yaml")
     salary = load_salary_rules(config_dir / "salary_rules.yaml")
+    source_expansion = load_source_expansion(config_dir / "source_expansion.yaml")
     return {
         "watchlist_targets": len(watchlist),
         "research_interests": len(interests["primary_interests"]),
         "salary_weights_total": sum(salary["industry_job_scoring_weights"].values()),
+        "source_expansion_targets": sum(
+            len(source_expansion[group]) for group in ("pilot_sources", "backlog")
+        ),
     }

@@ -7,6 +7,7 @@ from research_radar.config import (
     load_all_configs,
     load_career_preferences,
     load_research_interests,
+    load_source_expansion,
     load_watchlist,
     load_yaml,
 )
@@ -21,6 +22,7 @@ def test_all_project_yaml_configuration_loads_and_validates() -> None:
     assert result["watchlist_targets"] == 38
     assert result["research_interests"] >= 10
     assert result["salary_weights_total"] == 100
+    assert result["source_expansion_targets"] == 6
 
     interests = load_research_interests(PROJECT_ROOT / "config" / "research_interests.yaml")
     assert interests["research_identity"]["primary_field"] == (
@@ -116,3 +118,16 @@ def test_recommendation_rules_are_configured_and_valid() -> None:
         "needs_review",
     }
     assert rules["score_thresholds"]["high_priority"] > rules["score_thresholds"]["relevant"]
+
+
+def test_source_expansion_backlog_contains_only_verified_candidates() -> None:
+    expansion = load_source_expansion(PROJECT_ROOT / "config" / "source_expansion.yaml")
+
+    assert {item["source_id"] for item in expansion["backlog"]} == {
+        "rldm_official",
+        "synchron_careers",
+        "ohbm_official",
+    }
+    assert {item["implementation_status"] for item in expansion["backlog"]} == {
+        "VERIFIED_CANDIDATE"
+    }

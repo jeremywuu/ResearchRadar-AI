@@ -296,6 +296,32 @@ Acceptance evidence:
   is stale. The recalibrated plan has a different preference-bound fingerprint and requires a new
   review before any write authorization.
 
+## Milestone 4E — Scoring reconciliation and cognitive-neuroscience source expansion
+
+Status: implementation complete; live pilot remained read-only. One CCN parser retry remains a
+separately authorized operational follow-up.
+
+- Separate new-record recommendation admission from existing-row score maintenance.
+- Refresh personalized scores for all 13 existing jobs without deleting low-priority history or
+  changing source-observation timestamps.
+- Add deterministic adapters for CCN 2027, the CMU Cognitive Neuroscience PhD programme profile,
+  and Neuroelectrics' official Personio board.
+- Store non-actionable programme and talent-pool evidence as informational profiles rather than
+  fabricated opportunities.
+- Add verified backlog entries for RLDM, Synchron careers, and OHBM without implementing them.
+
+Verification evidence:
+
+- The authenticated read-only LIVE PILOT plan proposes score-only updates for 13 jobs, one PhD
+  record, and one event; it proposes no inserts, invalid records, conflicts, timestamp changes, or
+  content-change events.
+- CMU returned `SUCCESS_NO_MATCHES` with one programme profile and no announced Fall 2028 cycle.
+  Neuroelectrics returned `SUCCESS_NO_MATCHES` with two talent-pool profiles and no specific
+  relevant vacancy.
+- The first and only CCN smoke collection reached the official page but failed deterministic
+  extraction because of page-layout variation. The parser was made layout-tolerant and covered by
+  offline tests; no unapproved retry or synthetic opportunity was created.
+
 ## Milestone 5 — Discovery and personalization
 
 - Add a configurable open-web search adapter.

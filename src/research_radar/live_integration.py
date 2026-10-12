@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
@@ -367,7 +368,12 @@ def prepare_live_sheets_preview(
         provenance,
         preferences["recommendation_rules"],
     )
-    safe_execution = _recommended_execution(execution, provenance, recommendations)
+    safe_execution = _syncable_execution(
+        execution,
+        provenance,
+        recommendations,
+        adapter,
+    )
     run_id = f"live_preview_{generated_at.strftime('%Y%m%dT%H%M%SZ')}"
     workbook = sync_execution_report(
         safe_execution,
@@ -1227,6 +1233,72 @@ def _recommended_execution(
         )
         reports[category] = replace(report, records=records, records_accepted=len(records))
     return ExecutionReport(pipelines=reports)
+
+
+def _syncable_execution(
+    execution: ExecutionReport,
+    provenance: ProvenanceReport,
+    recommendations: RecommendationReport,
+    adapter: SheetsAdapter,
+) -> ExecutionReport:
+    """Separate new-record admission from non-destructive existing-row score refreshes."""
+
+    valid_ids = {record.record_id for record in provenance.records if record.valid}
+    recommended_ids = {
+        decision.record_id
+        for decision in recommendations.decisions
+        if decision.classification
+        in {RecommendationClassification.HIGH_PRIORITY, RecommendationClassification.RELEVANT}
+    }
+    sheet_by_category = {
+        "jobs": "Industry_Jobs",
+        "phd": "PhD_Opportunities",
+        "events": "Events",
+    }
+    reports: dict[str, PipelineReport] = {}
+    for category, report in execution.pipelines.items():
+        worksheet = adapter.read_worksheet(sheet_by_category[category])
+        existing_by_id = {
+            str(row["Record_ID"]): row
+            for row in worksheet.rows
+            if isinstance(row.get("Record_ID"), str) and row["Record_ID"]
+        }
+        selected: list[ProcessedOpportunity] = []
+        for item in report.records:
+            record_id = item.opportunity.opportunity_id
+            is_existing = record_id in existing_by_id
+            may_insert = record_id in recommended_ids and not item.excluded
+            if record_id not in valid_ids or not (is_existing or may_insert):
+                continue
+            copied = deepcopy(item)
+            if is_existing:
+                existing = existing_by_id[record_id]
+                copied.opportunity.first_seen_at = _sheet_datetime(
+                    existing.get("First_Seen"), copied.opportunity.first_seen_at
+                )
+                copied.opportunity.last_seen_at = _sheet_datetime(
+                    existing.get("Last_Seen"), copied.opportunity.last_seen_at
+                )
+            selected.append(copied)
+        reports[category] = replace(
+            report,
+            records=tuple(selected),
+            records_accepted=sum(not item.excluded for item in selected),
+        )
+    return ExecutionReport(pipelines=reports)
+
+
+def _sheet_datetime(value: Any, fallback: datetime) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return fallback
+    else:
+        return fallback
+    return parsed if parsed.tzinfo is not None else fallback
 
 
 def _source_coverage(

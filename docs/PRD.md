@@ -269,3 +269,21 @@ cannot authorize a recalibrated plan. The recalibration milestone remains dry-ru
 - PhD-to-industry pathways
 - Weekly email digests
 - Deadline alerts
+
+## Milestone 4E scoring and source-expansion boundary
+
+Insertion eligibility and existing-row maintenance are separate decisions. A new live record must
+still be provenance-valid and classified `HIGH_PRIORITY` or `RELEVANT`. An already synchronized
+record remains eligible for non-destructive agent-managed score refreshes even when its current
+recommendation is `NEEDS_REVIEW` or `LOW_PRIORITY`. Recalibration never deletes, hides, or closes
+the record and never changes canonical user feedback.
+
+Score-only reconciliation preserves source facts and all source-observation timestamps. It creates
+no source-content `Change_Log` event. The dry-run planner continues to bind approval identity to
+the preference configuration, so any prior fingerprint is stale after ranking configuration
+changes.
+
+The cognitive-neuroscience source pilot adds CCN 2027, the CMU Cognitive Neuroscience PhD profile,
+and Neuroelectrics careers. A verified programme profile without an announced admission cycle and
+a general talent pool are monitoring evidence, not active opportunities. Both are retained as
+informational profiles and may legitimately return `SUCCESS_NO_MATCHES`.

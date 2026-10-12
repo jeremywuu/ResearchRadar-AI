@@ -62,6 +62,39 @@ and March 15–16 as the workshops. Annual editions retain distinct stable ident
 - External text is untrusted data. It is parsed as text, never executed or followed as an
   instruction.
 
+## Cognitive-neuroscience expansion pilot
+
+### CCN 2027
+
+The adapter targets only `https://2027.ccneuro.org/` and requires explicit conference identity,
+2027 dates, and Edinburgh location evidence. A submission deadline remains unknown unless the page
+states a complete dated deadline. The initial bounded smoke run reached the page but encountered a
+layout-sensitive parser miss; it was recorded as `FAILED`, not converted into an opportunity. The
+parser now tolerates intervening page text, but no second live request was made without separate
+authorization.
+
+### CMU Cognitive Neuroscience PhD
+
+The adapter verifies the official programme, admissions, and graduate-programme pages. It records
+the cross-disciplinary mind/brain/behavior programme, computational and neuroimaging methods, the
+general December 1 admissions information, and programme-level support statements. Because the
+pages did not announce an admission year or Fall 2028 opening, the adapter emits a verified
+informational programme profile and `SUCCESS_NO_MATCHES`, not a PhD opportunity.
+
+### Neuroelectrics careers
+
+The official Neuroelectrics careers page explicitly links the public
+`neuroelectrics.jobs.personio.com` board. Only specific research-role links can become opportunity
+candidates. General permanent and internship talent pools are retained as informational profiles;
+they are not specific vacancies. A successful board read with only such profiles returns
+`SUCCESS_NO_MATCHES`.
+
+### Expansion backlog
+
+`config/source_expansion.yaml` records RLDM, Synchron careers, and OHBM as
+`VERIFIED_CANDIDATE`. This is a planning backlog only: none is called by the Milestone 4E pilot and
+none is treated as an implemented source adapter.
+
 ## Evidence and storage
 
 Collectors emit only bounded source facts and concise evidence strings, not arbitrary full-page

@@ -22,7 +22,7 @@ from research_radar.models import (
 )
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline, run_phd_pipeline
 from research_radar.storage.json_store import JsonOutputStore
-from research_radar.storage.sheets import InMemorySheetsAdapter
+from research_radar.storage.sheets import InMemorySheetsAdapter, sheet_rows_from_report
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 10, 12, 9, 0, tzinfo=UTC)
@@ -275,3 +275,102 @@ def test_preference_revision_changes_plan_fingerprint_without_source_history_or_
     assert feedback.hidden is False
     assert feedback.notes == "Preserve exactly"
     assert second.preview.workbook.plans["jobs"].change_log_rows == []
+
+
+def test_existing_low_priority_row_receives_score_refresh_without_source_history_change(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    shutil.copytree(ROOT / "config", project_root / "config")
+    live_dir = tmp_path / "live"
+    raw = job_record(
+        title="Sales Lead",
+        research_areas=["Artificial intelligence"],
+        research_orientation="Commercial / operational",
+        education_requirement="Unknown",
+    )
+    report = run_jobs_pipeline([raw], config_dir=project_root / "config", observed_at=NOW)
+    record_id = report.records[0].opportunity.opportunity_id
+    _, rows = sheet_rows_from_report(report)
+    existing = dict(rows[0])
+    existing.update(
+        {
+            "Research_Relevance": 90.0,
+            "PhD_Leverage": 90.0,
+            "Skills_Career_Fit": 90.0,
+            "Overall_Priority_Score": 90.0,
+            "First_Seen": "2026-09-01T09:00:00+00:00",
+            "Last_Seen": "2026-09-02T09:00:00+00:00",
+        }
+    )
+    JsonOutputStore(live_dir).write(report)
+    JsonOutputStore(live_dir).write(
+        run_phd_pipeline([], config_dir=project_root / "config", observed_at=NOW)
+    )
+    JsonOutputStore(live_dir).write(
+        run_events_pipeline(
+            [],
+            config_dir=project_root / "config",
+            observed_at=NOW,
+            reference_date=NOW.date(),
+        )
+    )
+    metadata = {
+        "sources": {
+            "official_jobs": {
+                "health": "SUCCESS",
+                "retrieved_at": NOW.isoformat(),
+                "records_fetched": 1,
+                "records_considered": 1,
+                "records": [raw],
+            }
+        },
+        "pipelines": {"jobs": {"records_accepted": 1}},
+    }
+    (live_dir / "source_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    class PilotAdapter(InMemorySheetsAdapter):
+        settings = type(
+            "Settings", (), {"environment": "live-pilot", "spreadsheet_id": "pilot-id"}
+        )()
+
+        def get_spreadsheet_title(self) -> str:
+            return "ResearchRadar AI — LIVE PILOT"
+
+    feedback_row = {
+        "Record_ID": record_id,
+        "Preference": "Interested",
+        "Saved": True,
+        "Hidden": False,
+        "Personal_Notes": "Preserve exactly",
+        "Updated_At": "",
+    }
+    adapter = PilotAdapter({"Industry_Jobs": [existing], "My_Feedback": [feedback_row]})
+
+    preview = prepare_live_sheets_preview(
+        project_root=project_root,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=NOW.date(),
+        adapter=adapter,
+    )
+
+    decision = next(
+        item for item in preview.recommendations.decisions if item.record_id == record_id
+    )
+    assert decision.classification is RecommendationClassification.LOW_PRIORITY
+    plan = preview.workbook.plans["jobs"]
+    assert plan.insert_count == 0
+    assert plan.update_count == 1
+    changed = plan.updates[0].changed_fields
+    assert "Research_Relevance" in changed
+    assert "Overall_Priority_Score" in changed
+    assert "First_Seen" not in changed
+    assert "Last_Seen" not in changed
+    assert "Opportunity_Status" not in changed
+    assert plan.change_log_rows == []
+    feedback = preview.feedback.feedback_by_id[record_id]
+    assert feedback.preference is PreferenceFeedback.INTERESTED
+    assert feedback.saved is True
+    assert feedback.notes == "Preserve exactly"

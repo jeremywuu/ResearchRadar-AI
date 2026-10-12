@@ -507,6 +507,365 @@ class CosyneEventAdapter:
         }
 
 
+class Ccn2027EventAdapter:
+    """Collect the explicitly announced CCN 2027 conference edition."""
+
+    source = SourceDescriptor(
+        source_id="ccn_2027_official",
+        organization="Cognitive Computational Neuroscience",
+        category="events",
+        official_source_url="https://2027.ccneuro.org/",
+        retrieval_url="https://2027.ccneuro.org/",
+        retrieval_method=RetrievalMethod.OFFICIAL_HTML,
+        verification_status=SourceVerificationStatus.VERIFIED_OFFICIAL,
+    )
+
+    def __init__(self, client: HttpClient | None = None) -> None:
+        self.client = client or HttpClient()
+
+    def collect(self, *, observed_at: datetime) -> SourceCollectionResult:
+        try:
+            if not _robots_allowed(self.client, self.source.retrieval_url):
+                return SourceCollectionResult(
+                    source=self.source,
+                    health=SourceHealth.BLOCKED,
+                    extraction_status=ExtractionStatus.FAILED,
+                    retrieved_at=observed_at,
+                    errors=["robots.txt does not permit retrieval"],
+                )
+            response = self.client.get(self.source.retrieval_url, accept="text/html")
+            record = self._extract(response.text)
+        except (HttpRetrievalError, ValueError) as exc:
+            return _failure_result(self.source, observed_at, exc)
+        return SourceCollectionResult(
+            source=self.source,
+            health=SourceHealth.SUCCESS,
+            extraction_status=ExtractionStatus.SUCCESS,
+            retrieved_at=observed_at,
+            records=[record],
+            records_fetched=1,
+            records_considered=1,
+            http_statuses=[response.status],
+            last_successful_retrieval_at=observed_at,
+        )
+
+    def _extract(self, html: str) -> dict[str, Any]:
+        text, _ = _html_text(html)
+        edition_confirmed = bool(
+            re.search(r"Cognitive Computational Neuroscience", text, re.IGNORECASE)
+            and re.search(r"July.{0,40}?26.{0,60}?29.{0,30}?2027", text, re.IGNORECASE)
+            and re.search(r"Edinburgh.{0,30}?(?:UK|United Kingdom)", text, re.IGNORECASE)
+        )
+        if not edition_confirmed:
+            raise ValueError("CCN 2027 edition dates or location not found")
+        deadline = _generic_english_deadline(text, "submission")
+        evidence = [
+            "10th Annual Conference on Cognitive Computational Neuroscience",
+            "Conference dates: 2027-07-26 through 2027-07-29",
+            "Location: Edinburgh, United Kingdom",
+        ]
+        if deadline:
+            evidence.append(f"Submission deadline: {deadline.isoformat()}")
+        return {
+            "fictional": False,
+            "title": "Cognitive Computational Neuroscience 2027",
+            "series_name": "CCN",
+            "organization": "Cognitive Computational Neuroscience",
+            "source_url": self.source.official_source_url,
+            "official_source_url": self.source.official_source_url,
+            "official_url": self.source.official_source_url,
+            "edition_year": 2027,
+            "country": "United Kingdom",
+            "region": "Europe",
+            "location": "Edinburgh",
+            "starts_on": "2027-07-26",
+            "ends_on": "2027-07-29",
+            "submission_deadline": deadline.isoformat() if deadline else None,
+            "registration_deadline": None,
+            "event_type": "academic conference",
+            "research_areas": [
+                "Computational cognitive neuroscience",
+                "Cognitive modeling",
+                "Neural representations",
+            ],
+            "opportunity_status": "confirmed upcoming",
+            "source_verification_status": "VERIFIED_OFFICIAL",
+            "source_type": "official_html",
+            "source_evidence": evidence,
+            "extraction_method": "deterministic_html_patterns",
+            "adapter_source_id": self.source.source_id,
+        }
+
+
+class CmuCognitiveNeuroscienceProgramAdapter:
+    """Monitor CMU's programme profile without inventing an open admission cycle."""
+
+    source = SourceDescriptor(
+        source_id="cmu_cognitive_neuroscience_phd",
+        organization="Carnegie Mellon University",
+        category="phd",
+        official_source_url=(
+            "https://www.cmu.edu/dietrich/psychology/graduate/cog-neuro/index.html"
+        ),
+        retrieval_url=("https://www.cmu.edu/dietrich/psychology/graduate/cog-neuro/index.html"),
+        retrieval_method=RetrievalMethod.OFFICIAL_HTML,
+        verification_status=SourceVerificationStatus.VERIFIED_OFFICIAL,
+    )
+    _PAGES = (
+        source.retrieval_url,
+        "https://www.cmu.edu/dietrich/psychology/graduate/admissions/index.html",
+        "https://www.cmu.edu/dietrich/psychology/graduate/index.html",
+    )
+
+    def __init__(self, client: HttpClient | None = None) -> None:
+        self.client = client or HttpClient()
+
+    def collect(self, *, observed_at: datetime) -> SourceCollectionResult:
+        pages: list[str] = []
+        statuses: list[int] = []
+        errors: list[str] = []
+        blocked = False
+        for url in self._PAGES:
+            try:
+                if not _robots_allowed(self.client, url):
+                    blocked = True
+                    errors.append(f"robots.txt does not permit {url}")
+                    continue
+                response = self.client.get(url, accept="text/html")
+                pages.append(response.text)
+                statuses.append(response.status)
+            except HttpRetrievalError as exc:
+                blocked = blocked or exc.status in {401, 403}
+                errors.append(str(exc))
+        if not pages:
+            return SourceCollectionResult(
+                source=self.source,
+                health=SourceHealth.BLOCKED if blocked else SourceHealth.FAILED,
+                extraction_status=ExtractionStatus.FAILED,
+                retrieved_at=observed_at,
+                errors=errors,
+                http_statuses=statuses,
+            )
+        try:
+            profile = self._extract_profile(pages)
+        except ValueError as exc:
+            return SourceCollectionResult(
+                source=self.source,
+                health=SourceHealth.PARTIAL if errors else SourceHealth.FAILED,
+                extraction_status=ExtractionStatus.FAILED,
+                retrieved_at=observed_at,
+                records_fetched=1,
+                errors=[*errors, str(exc)],
+                http_statuses=statuses,
+                last_successful_retrieval_at=observed_at,
+            )
+        return SourceCollectionResult(
+            source=self.source,
+            health=SourceHealth.SUCCESS_NO_MATCHES,
+            extraction_status=ExtractionStatus.NO_MATCHES,
+            retrieved_at=observed_at,
+            records=[],
+            informational_profiles=[profile],
+            records_fetched=1,
+            records_considered=1,
+            errors=errors,
+            http_statuses=statuses,
+            last_successful_retrieval_at=observed_at,
+        )
+
+    def _extract_profile(self, pages: list[str]) -> dict[str, Any]:
+        text = " ".join(_html_text(page)[0] for page in pages)
+        if not re.search(r"Cognitive Neuroscience (?:Graduate Program|Ph\.D\.)", text, re.I):
+            raise ValueError("CMU Cognitive Neuroscience PhD programme identity not found")
+        methods = [
+            label
+            for keyword, label in {
+                "computational": "Computational methods",
+                "neuroimaging": "Neuroimaging",
+                "fmri": "fMRI",
+                "eeg": "EEG",
+                "machine learning": "Machine learning",
+            }.items()
+            if keyword in text.casefold()
+        ]
+        fully_supported = bool(re.search(r"all students receive full support", text, re.IGNORECASE))
+        return {
+            "profile_type": "VERIFIED_PROGRAMME_PROFILE",
+            "actionable_opportunity": False,
+            "programme": "Cognitive Neuroscience Ph.D.",
+            "university": "Carnegie Mellon University",
+            "research_scope": "Mind, brain, behavior, and computational science",
+            "methods": methods,
+            "admission_cycle": None,
+            "recruitment_status": "FUTURE_CYCLE_NOT_ANNOUNCED",
+            "application_deadline": None,
+            "general_deadline_information": (
+                "December 1 (general admissions information; no Fall 2028 cycle stated)"
+                if re.search(r"December\s+1", text, re.I)
+                else None
+            ),
+            "funding_information": (
+                "All students receive full support, including stipend, tuition, and health coverage"
+                if fully_supported
+                else None
+            ),
+            "official_url": self.source.official_source_url,
+            "admissions_url": self._PAGES[1],
+            "verification_status": "VERIFIED_OFFICIAL",
+            "source_evidence": [
+                "Programme trains cognitive neuroscientists across mind, brain, and behavior",
+                "No admission year or Fall 2028 opening is stated on the monitored pages",
+            ],
+        }
+
+
+class NeuroelectricsCareersAdapter:
+    """Follow Neuroelectrics' official link to its public Personio job board."""
+
+    source = SourceDescriptor(
+        source_id="neuroelectrics_personio",
+        organization="Neuroelectrics",
+        category="jobs",
+        official_source_url="https://www.neuroelectrics.com/careers",
+        retrieval_url="https://www.neuroelectrics.com/careers",
+        retrieval_method=RetrievalMethod.OFFICIAL_HTML,
+        verification_status=SourceVerificationStatus.VERIFIED_OFFICIAL,
+    )
+    _PERSONIO_HOST = "neuroelectrics.jobs.personio.com"
+    _RELEVANT_TITLE = re.compile(
+        r"computational|neuroscien|neural|eeg|brain model|neurostimulation|"
+        r"computational psychiatry|research scientist",
+        re.IGNORECASE,
+    )
+    _MAX_DETAILS = 10
+
+    def __init__(self, client: HttpClient | None = None) -> None:
+        self.client = client or HttpClient()
+
+    def collect(self, *, observed_at: datetime) -> SourceCollectionResult:
+        try:
+            if not _robots_allowed(self.client, self.source.retrieval_url):
+                return SourceCollectionResult(
+                    source=self.source,
+                    health=SourceHealth.BLOCKED,
+                    extraction_status=ExtractionStatus.FAILED,
+                    retrieved_at=observed_at,
+                    errors=["robots.txt does not permit retrieval"],
+                )
+            careers = self.client.get(self.source.retrieval_url, accept="text/html")
+            _, official_links = _html_text(careers.text)
+            board_url = next(
+                (
+                    urljoin(self.source.official_source_url, href)
+                    for _, href in official_links
+                    if urlsplit(urljoin(self.source.official_source_url, href)).netloc
+                    == self._PERSONIO_HOST
+                ),
+                None,
+            )
+            if board_url is None:
+                raise ValueError(
+                    "official careers page does not link to the expected Personio board"
+                )
+            board_url = f"https://{self._PERSONIO_HOST}/?language=en"
+            if not _robots_allowed(self.client, board_url):
+                return SourceCollectionResult(
+                    source=self.source,
+                    health=SourceHealth.BLOCKED,
+                    extraction_status=ExtractionStatus.FAILED,
+                    retrieved_at=observed_at,
+                    errors=["Personio robots.txt does not permit retrieval"],
+                    http_statuses=[careers.status],
+                )
+            board = self.client.get(board_url, accept="text/html")
+            _, links = _html_text(board.text)
+            unique_jobs: dict[str, str] = {}
+            for label, href in links:
+                absolute = urljoin(board_url, href)
+                if urlsplit(absolute).netloc == self._PERSONIO_HOST and "/job/" in absolute:
+                    unique_jobs.setdefault(absolute.split("?", 1)[0], " ".join(label.split()))
+            talent_pools = [
+                {"profile_type": "TALENT_POOL", "title": title, "official_url": url}
+                for url, title in unique_jobs.items()
+                if "talent pool" in title.casefold()
+            ]
+            relevant = [
+                (url, title)
+                for url, title in unique_jobs.items()
+                if "talent pool" not in title.casefold() and self._RELEVANT_TITLE.search(title)
+            ][: self._MAX_DETAILS]
+            records: list[dict[str, Any]] = []
+            errors: list[str] = []
+            statuses = [careers.status, board.status]
+            for url, title in relevant:
+                try:
+                    detail = self.client.get(url, accept="text/html")
+                    statuses.append(detail.status)
+                    records.append(self._extract_job(url, title, detail.text))
+                except (HttpRetrievalError, ValueError) as exc:
+                    errors.append(f"{url}: {exc}")
+            if errors and records:
+                health, extraction = SourceHealth.PARTIAL, ExtractionStatus.PARTIAL
+            elif errors:
+                health, extraction = SourceHealth.FAILED, ExtractionStatus.FAILED
+            elif records:
+                health, extraction = SourceHealth.SUCCESS, ExtractionStatus.SUCCESS
+            else:
+                health, extraction = SourceHealth.SUCCESS_NO_MATCHES, ExtractionStatus.NO_MATCHES
+            return SourceCollectionResult(
+                source=self.source,
+                health=health,
+                extraction_status=extraction,
+                retrieved_at=observed_at,
+                records=records,
+                informational_profiles=talent_pools,
+                records_fetched=len(unique_jobs),
+                records_matched=len(relevant),
+                records_considered=len(relevant),
+                errors=errors,
+                http_statuses=statuses,
+                last_successful_retrieval_at=observed_at,
+            )
+        except (HttpRetrievalError, ValueError) as exc:
+            return _failure_result(self.source, observed_at, exc)
+
+    def _extract_job(self, url: str, listing_title: str, html: str) -> dict[str, Any]:
+        text, _ = _html_text(html)
+        if listing_title.casefold() not in text.casefold():
+            raise ValueError("detail page does not confirm the listed title")
+        location = "Barcelona" if "Barcelona" in text else None
+        return {
+            "fictional": False,
+            "title": listing_title,
+            "organization": "Neuroelectrics",
+            "source_url": url,
+            "official_source_url": self.source.official_source_url,
+            "official_job_id": url.rstrip("/").rsplit("/", 1)[-1],
+            "location": location,
+            "country": "Spain" if location else None,
+            "region": "Europe" if location else None,
+            "research_areas": _research_areas(f"{listing_title} {text}"),
+            "research_orientation": (
+                "Research-oriented"
+                if "research" in listing_title.casefold()
+                else "Applied research"
+            ),
+            "education_requirement": "Unknown",
+            "working_language": None,
+            "skills": [],
+            "salary": {},
+            "source_verification_status": "VERIFIED_OFFICIAL",
+            "opportunity_status": "confirmed open",
+            "source_type": "official_html_linked_ats",
+            "source_evidence": [
+                "Neuroelectrics official careers page links to this Personio board",
+                f"Position title: {listing_title}",
+            ],
+            "extraction_method": "deterministic_html_patterns",
+            "adapter_source_id": self.source.source_id,
+        }
+
+
 def _main_meeting_dates(text: str) -> tuple[int, int, int] | None:
     day_first = re.search(
         r"Main Meeting\s+(\d{1,2})\s*[–-]\s*(\d{1,2})\s+March[,]?\s+(20\d{2})",
@@ -546,6 +905,33 @@ def _find_deadline(text: str, prefix: str, month_name: str, month: int) -> date 
     return date(int(match.group(2)), month, int(match.group(1))) if match else None
 
 
+def _generic_english_deadline(text: str, label: str) -> date | None:
+    months = {
+        "january": 1,
+        "february": 2,
+        "march": 3,
+        "april": 4,
+        "may": 5,
+        "june": 6,
+        "july": 7,
+        "august": 8,
+        "september": 9,
+        "october": 10,
+        "november": 11,
+        "december": 12,
+    }
+    match = re.search(
+        rf"{re.escape(label)}[^.]{{0,80}}?(?:deadline|due)[^.]{{0,40}}?"
+        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+        r"\s+(\d{1,2}),?\s+(20\d{2})",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return date(int(match.group(3)), months[match.group(1).casefold()], int(match.group(2)))
+
+
 def _country_from_location(location: str | None) -> str | None:
     if not location:
         return None
@@ -560,6 +946,7 @@ def _country_from_location(location: str | None) -> str | None:
         "vancouver": "Canada",
         "sydney": "Australia",
         "melbourne": "Australia",
+        "barcelona": "Spain",
     }.items():
         if marker in lowered:
             return country
@@ -569,6 +956,14 @@ def _country_from_location(location: str | None) -> str | None:
 def _research_areas(text: str) -> list[str]:
     lowered = text.casefold()
     keywords = {
+        "computational cognitive neuroscience": "Computational cognitive neuroscience",
+        "cognitive neuroscience": "Cognitive neuroscience",
+        "cognitive model": "Cognitive modeling",
+        "neural representation": "Neural representations",
+        "neural decoding": "Neural encoding and decoding",
+        "eeg": "Neural data science",
+        "neurostimulation": "Neurotechnology",
+        "brain-computer": "Brain-computer interfaces",
         "machine learning": "Machine learning",
         "artificial intelligence": "Artificial intelligence",
         "reinforcement learning": "Reinforcement learning",

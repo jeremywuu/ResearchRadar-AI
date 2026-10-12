@@ -289,6 +289,24 @@ Preferences and watchlist targets live in YAML. `research_radar.config` uses `ya
 then validates the project schema. A configuration that merely looks correct is not accepted
 until the parser and schema validation both succeed.
 
+`source_expansion.yaml` separates implemented pilot adapters from verified future candidates. It
+does not trigger collection by itself. Every entry has a stable source ID, category, official
+HTTPS URL, and implementation state.
+
+## Score reconciliation and informational source profiles
+
+Live Sheets planning now forms its desired set from two independent sets: provenance-valid new
+records approved for insertion, and provenance-valid IDs already present in the target worksheet.
+The second set permits score refreshes after a preference revision without reopening the insertion
+decision. Existing sheet `First_Seen` and `Last_Seen` values are copied into the planning model so
+a cached recalculation cannot manufacture observation history.
+
+`SourceCollectionResult.informational_profiles` carries verified, useful source entities that are
+not actionable opportunities. The CMU adapter uses it for a programme profile when no admission
+cycle is announced; the Neuroelectrics adapter uses it for general talent pools. These profiles are
+stored in source metadata but never enter opportunity normalization, identity generation, ranking,
+or Sheets insertion.
+
 ## Scheduling design
 
 The future GitHub Actions workflow will define three independent jobs: `scan-phd`, `scan-jobs`,

@@ -12,7 +12,10 @@ from typing import Any
 from research_radar.collectors.base import OfficialSourceAdapter, SourceCollectionResult
 from research_radar.collectors.official import (
     AnthropicGreenhouseAdapter,
+    Ccn2027EventAdapter,
+    CmuCognitiveNeuroscienceProgramAdapter,
     CosyneEventAdapter,
+    NeuroelectricsCareersAdapter,
     UclGatsbyPhdAdapter,
 )
 from research_radar.models import (
@@ -38,6 +41,9 @@ def default_adapters() -> dict[str, OfficialSourceAdapter]:
         AnthropicGreenhouseAdapter(),
         UclGatsbyPhdAdapter(),
         CosyneEventAdapter(),
+        Ccn2027EventAdapter(),
+        CmuCognitiveNeuroscienceProgramAdapter(),
+        NeuroelectricsCareersAdapter(),
     ]
     return {adapter.source.source_id: adapter for adapter in adapters}
 

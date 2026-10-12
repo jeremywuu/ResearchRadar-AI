@@ -506,3 +506,18 @@ Fresh source metadata additionally distinguishes `records_fetched` (complete lis
 records, and accepted records. Reconciled snapshots copy forward unobserved records rather than
 deleting them. Their previous `First_Seen`, `Last_Seen`, content, status, scores, and feedback remain
 unchanged.
+
+## Informational source profiles
+
+`SourceCollectionResult.informational_profiles[]` stores verified source entities that must not be
+normalized as active opportunities. Each profile is source-specific but must include a
+`profile_type`, an official URL, verification state, and explicit actionable/non-actionable state
+when applicable. Examples are a PhD programme profile with no announced cycle and a general talent
+pool. Informational profiles contribute to source review but not opportunity or Sheets row counts.
+
+## Recalibration update ownership
+
+For records already present in opportunity worksheets, agent-managed score cells may be updated
+regardless of current recommendation class. This exception does not admit new low-priority rows.
+Score-only changes exclude `First_Seen`, `Last_Seen`, official source fields, and user feedback, and
+produce no source-content change event.

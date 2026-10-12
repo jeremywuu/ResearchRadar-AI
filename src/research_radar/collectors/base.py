@@ -42,6 +42,7 @@ class SourceCollectionResult:
     extraction_status: ExtractionStatus
     retrieved_at: datetime
     records: list[dict[str, Any]] = field(default_factory=list)
+    informational_profiles: list[dict[str, Any]] = field(default_factory=list)
     records_fetched: int = 0
     records_matched: int = 0
     records_considered: int = 0

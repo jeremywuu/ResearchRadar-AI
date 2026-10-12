@@ -821,7 +821,7 @@ def test_observation_policy_is_conservative(
         assert decision.may_change_opportunity_status is False
 
 
-def test_recommendation_demotion_does_not_delete_existing_sheet_record(tmp_path: Path) -> None:
+def test_existing_record_remains_updatable_after_recommendation_demotion(tmp_path: Path) -> None:
     live_dir = tmp_path / "live"
     ids = _write_live_snapshots(live_dir)
     initial = prepare_live_sheets_preview(
@@ -851,5 +851,8 @@ def test_recommendation_demotion_does_not_delete_existing_sheet_record(tmp_path:
         RecommendationClassification.LOW_PRIORITY
     )
     assert incremental.preview.workbook.plans["jobs"].insert_count == 0
-    assert incremental.preview.workbook.plans["jobs"].update_count == 0
+    assert incremental.preview.workbook.plans["jobs"].update_count == 1
+    update = incremental.preview.workbook.plans["jobs"].updates[0]
+    assert update.record_id == ids["jobs"]
+    assert update.changed_fields["Job_Title"] == "Recruiter, AI Research"
     assert adapter.read_worksheet("Industry_Jobs").rows == [existing_job]
