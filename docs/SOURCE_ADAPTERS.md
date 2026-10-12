@@ -69,9 +69,12 @@ and March 15–16 as the workshops. Annual editions retain distinct stable ident
 The adapter targets only `https://2027.ccneuro.org/` and requires explicit conference identity,
 2027 dates, and Edinburgh location evidence. A submission deadline remains unknown unless the page
 states a complete dated deadline. The initial bounded smoke run reached the page but encountered a
-layout-sensitive parser miss; it was recorded as `FAILED`, not converted into an opportunity. The
-parser now tolerates intervening page text, but no second live request was made without separate
-authorization.
+layout-sensitive parser miss; it was recorded as `FAILED`, not converted into an opportunity. An
+authorized second bounded request on 2026-10-12 also returned official page content that did not
+satisfy those deterministic extraction requirements. It therefore remained `FAILED`, emitted no
+event record, and was not retried or replaced with an unofficial source. Offline parser fixtures
+continue to cover the known layout variants; another live attempt requires separate authorization
+and inspection of a safely bounded response fixture.
 
 ### CMU Cognitive Neuroscience PhD
 

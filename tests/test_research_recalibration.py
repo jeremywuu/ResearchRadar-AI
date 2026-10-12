@@ -11,6 +11,7 @@ from research_radar.config import load_career_preferences
 from research_radar.live_integration import (
     RecommendationClassification,
     audit_provenance,
+    build_combined_live_snapshot,
     classify_recommendations,
     prepare_incremental_live_sync,
     prepare_live_sheets_preview,
@@ -373,4 +374,177 @@ def test_existing_low_priority_row_receives_score_refresh_without_source_history
     feedback = preview.feedback.feedback_by_id[record_id]
     assert feedback.preference is PreferenceFeedback.INTERESTED
     assert feedback.saved is True
+    assert feedback.notes == "Preserve exactly"
+
+
+def test_combined_ccn_insert_and_existing_score_refresh_are_stable_and_read_only(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    shutil.copytree(ROOT / "config", project_root / "config")
+    existing_dir = tmp_path / "existing"
+    addition_dir = tmp_path / "addition"
+    combined_dir = tmp_path / "combined"
+    job_raw = job_record(
+        title="Sales Lead",
+        research_areas=["Artificial intelligence"],
+        research_orientation="Commercial / operational",
+        education_requirement="Unknown",
+    )
+    job_report = run_jobs_pipeline([job_raw], config_dir=project_root / "config", observed_at=NOW)
+    record_id = job_report.records[0].opportunity.opportunity_id
+    _, job_rows = sheet_rows_from_report(job_report)
+    existing_job = dict(job_rows[0])
+    existing_job.update(
+        {
+            "Research_Relevance": 90.0,
+            "Overall_Priority_Score": 90.0,
+            "First_Seen": "2026-09-01T09:00:00+00:00",
+            "Last_Seen": "2026-09-02T09:00:00+00:00",
+        }
+    )
+    JsonOutputStore(existing_dir).write(job_report)
+    JsonOutputStore(existing_dir).write(
+        run_phd_pipeline([], config_dir=project_root / "config", observed_at=NOW)
+    )
+    JsonOutputStore(existing_dir).write(
+        run_events_pipeline(
+            [],
+            config_dir=project_root / "config",
+            observed_at=NOW,
+            reference_date=NOW.date(),
+        )
+    )
+    (existing_dir / "source_metadata.json").write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "official_jobs": {
+                        "health": "SUCCESS",
+                        "retrieved_at": NOW.isoformat(),
+                        "records_fetched": 1,
+                        "records": [job_raw],
+                    }
+                },
+                "pipelines": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    ccn_raw = {
+        "fictional": False,
+        "title": "Cognitive Computational Neuroscience 2027",
+        "series_name": "CCN",
+        "organization": "Cognitive Computational Neuroscience",
+        "source_url": "https://2027.ccneuro.org/",
+        "official_source_url": "https://2027.ccneuro.org/",
+        "official_url": "https://2027.ccneuro.org/",
+        "adapter_source_id": "ccn_2027_official",
+        "edition_year": 2027,
+        "country": "United Kingdom",
+        "region": "Europe",
+        "location": "Edinburgh",
+        "starts_on": "2027-07-26",
+        "ends_on": "2027-07-29",
+        "submission_deadline": None,
+        "registration_deadline": None,
+        "event_type": "academic conference",
+        "research_areas": [
+            "Computational cognitive neuroscience",
+            "Cognitive modeling",
+            "Neural representations",
+        ],
+        "opportunity_status": "confirmed upcoming",
+        "source_verification_status": "VERIFIED_OFFICIAL",
+        "source_type": "official_html",
+        "source_evidence": [
+            "Conference dates: 2027-07-26 through 2027-07-29",
+            "Location: Edinburgh, United Kingdom",
+        ],
+        "extraction_method": "deterministic_html_patterns",
+    }
+    ccn_report = run_events_pipeline(
+        [ccn_raw],
+        config_dir=project_root / "config",
+        observed_at=NOW,
+        reference_date=NOW.date(),
+    )
+    JsonOutputStore(addition_dir).write(ccn_report)
+    (addition_dir / "source_metadata.json").write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "ccn_2027_official": {
+                        "source": {"category": "events"},
+                        "health": "SUCCESS",
+                        "retrieved_at": NOW.isoformat(),
+                        "records_fetched": 1,
+                        "records_considered": 1,
+                        "records": [ccn_raw],
+                    }
+                },
+                "pipelines": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    build_combined_live_snapshot(
+        existing_dir=existing_dir,
+        additions_dir=addition_dir,
+        output_dir=combined_dir,
+    )
+
+    class PilotAdapter(InMemorySheetsAdapter):
+        settings = type(
+            "Settings", (), {"environment": "live-pilot", "spreadsheet_id": "pilot-id"}
+        )()
+
+        def get_spreadsheet_title(self) -> str:
+            return "ResearchRadar AI — LIVE PILOT"
+
+    adapter = PilotAdapter(
+        {
+            "Industry_Jobs": [existing_job],
+            "My_Feedback": [
+                {
+                    "Record_ID": record_id,
+                    "Preference": "Interested",
+                    "Saved": True,
+                    "Hidden": False,
+                    "Personal_Notes": "Preserve exactly",
+                    "Updated_At": "",
+                }
+            ],
+        }
+    )
+    first = prepare_incremental_live_sync(
+        project_root=project_root,
+        live_data_dir=combined_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=NOW.date(),
+        adapter=adapter,
+    )
+    second = prepare_incremental_live_sync(
+        project_root=project_root,
+        live_data_dir=combined_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW.replace(hour=10),
+        reference_date=NOW.date(),
+        adapter=adapter,
+    )
+
+    assert first.preview.workbook.plans["jobs"].update_count == 1
+    assert first.preview.workbook.plans["jobs"].change_log_rows == []
+    assert first.preview.workbook.plans["events"].insert_count == 1
+    assert len(first.preview.workbook.plans["events"].change_log_rows) == 1
+    assert first.plan_fingerprint == second.plan_fingerprint
+    assert adapter.write_operations == []
+    job_update = first.preview.workbook.plans["jobs"].updates[0].changed_fields
+    assert "First_Seen" not in job_update
+    assert "Last_Seen" not in job_update
+    feedback = first.preview.feedback.feedback_by_id[record_id]
+    assert feedback.preference is PreferenceFeedback.INTERESTED
+    assert feedback.saved is True
+    assert feedback.hidden is False
     assert feedback.notes == "Preserve exactly"

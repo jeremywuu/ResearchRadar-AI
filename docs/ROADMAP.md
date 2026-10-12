@@ -298,8 +298,8 @@ Acceptance evidence:
 
 ## Milestone 4E — Scoring reconciliation and cognitive-neuroscience source expansion
 
-Status: implementation complete; live pilot remained read-only. One CCN parser retry remains a
-separately authorized operational follow-up.
+Status: implementation complete; live pilot remained read-only. The separately authorized CCN
+parser retry was attempted in Milestone 4E.1 and failed closed without emitting an event.
 
 - Separate new-record recommendation admission from existing-row score maintenance.
 - Refresh personalized scores for all 13 existing jobs without deleting low-priority history or
@@ -318,9 +318,31 @@ Verification evidence:
 - CMU returned `SUCCESS_NO_MATCHES` with one programme profile and no announced Fall 2028 cycle.
   Neuroelectrics returned `SUCCESS_NO_MATCHES` with two talent-pool profiles and no specific
   relevant vacancy.
-- The first and only CCN smoke collection reached the official page but failed deterministic
-  extraction because of page-layout variation. The parser was made layout-tolerant and covered by
-  offline tests; no unapproved retry or synthetic opportunity was created.
+- The initial CCN smoke collection reached the official page but failed deterministic extraction
+  because of page-layout variation. The parser was made layout-tolerant and covered by offline
+  tests; no unapproved retry or synthetic opportunity was created.
+
+## Milestone 4E.1 — CCN collection recovery and final synchronization review
+
+Status: complete; no Google Sheets writes were performed.
+
+- Retry only the official CCN 2027 adapter once with bounded read-only retrieval.
+- Keep parser failure distinct from source verification and avoid fabricating a conference record.
+- Combine the fresh CCN result with the existing local archive without mutating either input.
+- Rebuild the LIVE PILOT score-reconciliation plan and verify deterministic fingerprints.
+
+Verification evidence:
+
+- The authorized CCN request completed but deterministic extraction still failed because the
+  returned content did not expose the required edition dates and location in a supported layout.
+  Source health is `FAILED`; zero event records were emitted.
+- Offline scoring of the separately verified CCN facts classifies the conference as
+  `CORE_DOMAIN_FIT`, but that profile is not sync-eligible without a successful live extraction.
+- The authenticated read-only LIVE PILOT plan proposes 13 job, one PhD, and one event personalized
+  score update; 38 watchlist rows are unchanged. It proposes no inserts, source-content changes,
+  observation-only changes, invalid records, conflicts, or Change Log events.
+- Repeated dry-runs over unchanged inputs produced the same preference- and target-bound plan
+  fingerprint.
 
 ## Milestone 5 — Discovery and personalization
 

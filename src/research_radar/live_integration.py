@@ -882,14 +882,18 @@ def audit_provenance(execution: ExecutionReport) -> ProvenanceReport:
                 blocking.append("source_evidence is missing")
 
             missing = _missing_important_fields(opportunity)
-            if isinstance(opportunity, AcademicEvent) and not all(
-                (
-                    opportunity.overall_starts_on,
-                    opportunity.overall_ends_on,
-                    opportunity.main_meeting_starts_on,
-                    opportunity.main_meeting_ends_on,
-                    opportunity.workshop_starts_on,
-                    opportunity.workshop_ends_on,
+            if (
+                isinstance(opportunity, AcademicEvent)
+                and (opportunity.series_name or "").casefold() == "cosyne"
+                and not all(
+                    (
+                        opportunity.overall_starts_on,
+                        opportunity.overall_ends_on,
+                        opportunity.main_meeting_starts_on,
+                        opportunity.main_meeting_ends_on,
+                        opportunity.workshop_starts_on,
+                        opportunity.workshop_ends_on,
+                    )
                 )
             ):
                 blocking.append("conference date segments are incomplete")
@@ -918,6 +922,76 @@ def _read_object(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise LiveDataError(f"live data file must contain an object: {path}")
     return value
+
+
+def build_combined_live_snapshot(
+    *,
+    existing_dir: Path,
+    additions_dir: Path,
+    output_dir: Path,
+) -> Path:
+    """Build a local-only preview snapshot without mutating either input directory."""
+
+    if output_dir.resolve() in {existing_dir.resolve(), additions_dir.resolve()}:
+        raise LiveDataError("combined preview output must be separate from both input snapshots")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for category in ("jobs", "phd", "events"):
+        current = _read_object(existing_dir / f"{category}.json")
+        addition_path = additions_dir / f"{category}.json"
+        addition = _read_object(addition_path) if addition_path.exists() else {"records": []}
+        current_records = current.get("records")
+        addition_records = addition.get("records")
+        if not isinstance(current_records, list) or not isinstance(addition_records, list):
+            raise LiveDataError(f"{category} snapshot records must be lists")
+        current_ids = {_stored_record_id(record, category) for record in current_records}
+        addition_ids = [_stored_record_id(record, category) for record in addition_records]
+        duplicates = current_ids & set(addition_ids)
+        if duplicates or len(addition_ids) != len(set(addition_ids)):
+            joined = ", ".join(sorted(duplicates or set(addition_ids)))
+            raise LiveDataError(f"combined preview contains duplicate {category} IDs: {joined}")
+        combined = deepcopy(current)
+        combined["records"] = [*current_records, *addition_records]
+        summary = combined.get("summary")
+        if isinstance(summary, dict):
+            summary["records_processed"] = len(combined["records"])
+            summary["records_accepted"] = sum(
+                not bool(record.get("excluded"))
+                for record in combined["records"]
+                if isinstance(record, dict)
+            )
+        (output_dir / f"{category}.json").write_text(
+            json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    current_metadata = _read_object(existing_dir / "source_metadata.json")
+    addition_metadata = _read_object(additions_dir / "source_metadata.json")
+    current_sources = current_metadata.get("sources")
+    addition_sources = addition_metadata.get("sources")
+    if not isinstance(current_sources, dict) or not isinstance(addition_sources, dict):
+        raise LiveDataError("source metadata must contain source mappings")
+    overlap = set(current_sources) & set(addition_sources)
+    if overlap:
+        raise LiveDataError(
+            "combined preview source IDs already exist: " + ", ".join(sorted(overlap))
+        )
+    metadata = deepcopy(current_metadata)
+    metadata["sources"] = {**current_sources, **addition_sources}
+    metadata["pipelines"] = {}
+    (output_dir / "source_metadata.json").write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return output_dir
+
+
+def _stored_record_id(record: Any, category: str) -> str:
+    if not isinstance(record, dict) or not isinstance(record.get("opportunity"), dict):
+        raise LiveDataError(f"{category} snapshot contains a malformed record")
+    record_id = record["opportunity"].get("opportunity_id")
+    if not isinstance(record_id, str) or not record_id:
+        raise LiveDataError(f"{category} snapshot contains a record without Record_ID")
+    return record_id
 
 
 def _source_ids_by_url(metadata: dict[str, Any]) -> dict[str, str]:

@@ -307,6 +307,12 @@ cycle is announced; the Neuroelectrics adapter uses it for general talent pools.
 stored in source metadata but never enter opportunity normalization, identity generation, ranking,
 or Sheets insertion.
 
+`build_combined_live_snapshot` creates a separate ignored preview directory from the immutable
+current live snapshot plus one bounded source result. It rejects duplicate record or source IDs
+and never mutates either input. This lets a failed source-health observation participate in an
+incremental plan fingerprint without fabricating an opportunity or advancing unrelated source
+timestamps.
+
 ## Scheduling design
 
 The future GitHub Actions workflow will define three independent jobs: `scan-phd`, `scan-jobs`,

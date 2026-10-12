@@ -521,3 +521,8 @@ For records already present in opportunity worksheets, agent-managed score cells
 regardless of current recommendation class. This exception does not admit new low-priority rows.
 Score-only changes exclude `First_Seen`, `Last_Seen`, official source fields, and user feedback, and
 produce no source-content change event.
+
+Conference-wide `Start_Date` and `End_Date` are sufficient for ordinary conference provenance.
+The additional overall/main-meeting/workshop date segments are required only for COSYNE because
+that source explicitly distinguishes those intervals. A CCN edition is not provenance-blocked for
+lacking COSYNE-specific workshop segmentation.

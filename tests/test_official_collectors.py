@@ -20,10 +20,12 @@ from research_radar.collectors.official import (
 )
 from research_radar.collectors.service import collect_live
 from research_radar.models import (
+    DomainFitClassification,
     RetrievalMethod,
     SourceHealth,
     SourceVerificationStatus,
 )
+from research_radar.pipelines import run_events_pipeline
 
 NOW = datetime(2026, 10, 11, 9, 0, tzinfo=UTC)
 ROOT = Path(__file__).resolve().parents[1]
@@ -302,6 +304,66 @@ def test_ccn_2027_extracts_edition_and_preserves_unknown_deadline() -> None:
     assert result.records[0]["starts_on"] == "2027-07-26"
     assert result.records[0]["submission_deadline"] is None
     assert "Computational cognitive neuroscience" in result.records[0]["research_areas"]
+
+
+def test_ccn_layout_variation_keeps_official_identity_and_dates() -> None:
+    html = """
+    <main><h1>Cognitive Computational Neuroscience</h1>
+    <p>The conference meets Monday, July <span>26</span> through Thursday, July
+    <strong>29</strong>, in the year 2027.</p>
+    <p>Join us in Edinburgh — UK.</p></main>
+    """
+    transport = html_transport(Ccn2027EventAdapter.source.retrieval_url, html)
+
+    result = Ccn2027EventAdapter(HttpClient(transport=transport)).collect(observed_at=NOW)
+
+    assert result.health is SourceHealth.SUCCESS
+    assert result.records[0]["title"] == "Cognitive Computational Neuroscience 2027"
+    assert result.records[0]["starts_on"] == "2027-07-26"
+    assert result.records[0]["ends_on"] == "2027-07-29"
+
+
+def test_ccn_robots_block_is_reported_without_page_request() -> None:
+    robots = "https://2027.ccneuro.org/robots.txt"
+    transport = RouteTransport({robots: response(robots, "User-agent: *\nDisallow: /\n")})
+
+    result = Ccn2027EventAdapter(HttpClient(transport=transport)).collect(observed_at=NOW)
+
+    assert result.health is SourceHealth.BLOCKED
+    assert result.records == []
+    assert transport.calls == [robots]
+
+
+def test_ccn_event_identity_is_stable_and_domain_first_scoring_is_core() -> None:
+    raw = Ccn2027EventAdapter()._extract(
+        "Cognitive Computational Neuroscience July 26-29, 2027 Edinburgh, UK"
+    )
+    first = run_events_pipeline(
+        [raw], config_dir=ROOT / "config", observed_at=NOW, reference_date=NOW.date()
+    ).records[0]
+    repeated = run_events_pipeline(
+        [raw], config_dir=ROOT / "config", observed_at=NOW, reference_date=NOW.date()
+    ).records[0]
+    next_edition = dict(raw)
+    next_edition.update(
+        {
+            "title": "Cognitive Computational Neuroscience 2028",
+            "edition_year": 2028,
+            "starts_on": "2028-07-26",
+            "ends_on": "2028-07-29",
+        }
+    )
+    later = run_events_pipeline(
+        [next_edition],
+        config_dir=ROOT / "config",
+        observed_at=NOW,
+        reference_date=NOW.date(),
+    ).records[0]
+
+    assert first.opportunity.opportunity_id == repeated.opportunity.opportunity_id
+    assert first.opportunity.opportunity_id != later.opportunity.opportunity_id
+    assert first.score.domain_fit is DomainFitClassification.CORE_DOMAIN_FIT
+    assert first.score.components["research_fit"] == 100.0
 
 
 def test_cmu_programme_profile_is_not_open_admission_without_cycle_evidence() -> None:
