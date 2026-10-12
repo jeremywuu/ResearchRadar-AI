@@ -79,6 +79,14 @@ class ResearchOrientation(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class DomainFitClassification(StrEnum):
+    CORE_DOMAIN_FIT = "CORE_DOMAIN_FIT"
+    ADJACENT_DOMAIN_FIT = "ADJACENT_DOMAIN_FIT"
+    TECHNICAL_TRANSFERABLE = "TECHNICAL_TRANSFERABLE"
+    LOW_DOMAIN_FIT = "LOW_DOMAIN_FIT"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+
+
 class EducationRequirement(StrEnum):
     PHD_REQUIRED = "PHD_REQUIRED"
     PHD_PREFERRED = "PHD_PREFERRED"
@@ -335,6 +343,7 @@ class ScoreBreakdown:
     weights: dict[str, int]
     final_score: float
     explanation: tuple[str, ...]
+    domain_fit: DomainFitClassification = DomainFitClassification.INSUFFICIENT_EVIDENCE
 
 
 @dataclass(kw_only=True)

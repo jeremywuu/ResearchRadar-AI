@@ -23,6 +23,12 @@ job_geography:
 event_geography:
   prioritize_europe: true
   retain_important_international_events: true
+  priority_series:
+    - "CCN"
+    - "Cognitive Science Society"
+    - "OHBM"
+    - "COSYNE"
+    - "RLDM"
 
 career_stages:
   - "CURRENT_OPPORTUNITY"
@@ -37,25 +43,21 @@ recommendation_rules:
     relevant: 60
   title_signals:
     high_priority:
-      - "research engineer"
-      - "research scientist"
-      - "applied scientist"
-      - "reinforcement learning"
-      - "machine learning research"
-      - "ml/research engineer"
-      - "computational neuroscience"
-      - "cognitive neuroscience"
+      - "computational neuroscientist"
+      - "cognitive neuroscience research scientist"
+      - "computational cognitive scientist"
+      - "neural data scientist"
       - "neural decoding"
+      - "bci research scientist"
+      - "neuroai"
+      - "decision science"
+      - "human behavior"
+    relevant:
+      - "computational psychiatry"
+      - "quantitative behavioral"
+      - "human-ai interaction"
       - "brain-computer interface"
       - "neurotechnology"
-      - "interpretability"
-      - "alignment"
-      - "safeguards research"
-    relevant:
-      - "data scientist"
-      - "research data platform"
-      - "research productivity"
-      - "quantitative behavioral"
     low_priority:
       - "gtm"
       - "recruiter"
@@ -66,6 +68,13 @@ recommendation_rules:
       - "political research"
       - "policy advocacy"
     needs_review:
+      - "research engineer"
+      - "research scientist"
+      - "data scientist"
+      - "applied scientist"
+      - "interpretability"
+      - "alignment"
+      - "safeguards"
       - "product manager"
       - "product management"
       - "economist"
@@ -73,14 +82,39 @@ recommendation_rules:
 
 target_skills:
   - "Python"
-  - "Machine learning"
   - "Computational modeling"
   - "Statistics"
-  - "Neural data analysis"
-  - "Reinforcement learning"
   - "Experimental design"
+  - "Neural data analysis"
+  - "EEG"
+  - "fMRI"
+  - "RSA"
+  - "MVPA"
+  - "Reinforcement learning"
+  - "Machine learning"
   - "Data science"
 
+preferred_job_families:
+  - "Computational Neuroscientist"
+  - "Cognitive Neuroscience Research Scientist"
+  - "Research Scientist, Human Behavior"
+  - "Research Scientist, NeuroAI"
+  - "Neural Data Scientist"
+  - "BCI Research Scientist"
+  - "Neural Decoding Research Engineer"
+  - "Computational Cognitive Scientist"
+  - "Research Scientist, Decision Science"
+  - "Computational Psychiatry Researcher"
+  - "Quantitative Behavioral Research Scientist"
+  - "Human-AI Interaction Research Scientist"
+
 phd_target_cycles:
-  - "Fall 2027"
   - "Fall 2028"
+  - "Fall 2027"
+
+phd_cycle_scores:
+  "Fall 2028": 100
+  "2028": 100
+  "Fall 2027": 65
+  "2027": 65
+  unknown: 50

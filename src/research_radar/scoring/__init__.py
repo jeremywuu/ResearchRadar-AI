@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 from research_radar.models import (
     AcademicEvent,
     CompensationDisclosureStatus,
+    DomainFitClassification,
     EducationRequirement,
     IndustryJob,
     OpportunityStatus,
@@ -18,23 +20,148 @@ from research_radar.models import (
 )
 
 
-def _research_score(job: IndustryJob, interests: dict[str, Any]) -> tuple[float, str]:
-    return research_fit_score(job.research_areas, interests)
+@dataclass(frozen=True)
+class ResearchFitAssessment:
+    overall: float
+    domain_fit: float
+    methodological_fit: float
+    research_question_fit: float
+    classification: DomainFitClassification
+    explanation: tuple[str, ...]
+
+
+def _canonical_term(value: str, aliases: dict[str, str]) -> str:
+    normalized = value.strip().casefold()
+    return aliases.get(normalized, value.strip()).casefold()
+
+
+def _weighted_match(
+    evidence: tuple[str, ...],
+    configured: dict[str, Any],
+    aliases: dict[str, str],
+    *,
+    neutral: float = 50.0,
+) -> tuple[float, tuple[str, ...]]:
+    weights = {
+        _canonical_term(str(name), aliases): float(value) for name, value in configured.items()
+    }
+    matches = {
+        _canonical_term(value, aliases): weights[_canonical_term(value, aliases)]
+        for value in evidence
+        if _canonical_term(value, aliases) in weights
+    }
+    if not matches:
+        return neutral, ()
+    return round(sum(matches.values()) / len(matches), 2), tuple(sorted(matches))
+
+
+def assess_research_fit(
+    research_areas: tuple[str, ...],
+    interests: dict[str, Any],
+    *,
+    methods: tuple[str, ...] = (),
+    role_title: str | None = None,
+) -> ResearchFitAssessment:
+    """Assess domain, method, and research-question fit without inventing missing evidence."""
+
+    relevance = interests["research_relevance"]
+    aliases = {
+        str(name).casefold(): str(value) for name, value in relevance.get("aliases", {}).items()
+    }
+    canonical_areas = {_canonical_term(area, aliases) for area in research_areas}
+    tiers = {
+        name: {_canonical_term(value, aliases) for value in values}
+        for name, values in interests["interest_tiers"].items()
+    }
+    title = (role_title or "").casefold()
+    combined_evidence = " ".join((role_title or "", *research_areas)).casefold()
+    lower_signal = next(
+        (
+            signal
+            for signal in relevance["lower_priority_title_signals"]
+            if signal.casefold() in title
+        ),
+        None,
+    )
+    interpretability_without_connection = "interpretability" in title and not any(
+        signal.casefold() in combined_evidence
+        for signal in relevance["interpretability_connection_signals"]
+    )
+
+    if lower_signal:
+        classification = DomainFitClassification.LOW_DOMAIN_FIT
+        tier_name = "lower_priority"
+        domain_reason = f"Title evidence '{lower_signal}' indicates lower domain fit."
+    elif interpretability_without_connection:
+        classification = DomainFitClassification.INSUFFICIENT_EVIDENCE
+        tier_name = "insufficient_evidence"
+        domain_reason = (
+            "Interpretability is not linked by available title evidence to cognition, brain, "
+            "human behavior, or neural representations."
+        )
+    elif canonical_areas & tiers["core"]:
+        classification = DomainFitClassification.CORE_DOMAIN_FIT
+        tier_name = "core"
+        domain_reason = "Structured research areas include a configured core domain."
+    elif canonical_areas & tiers["adjacent"]:
+        classification = DomainFitClassification.ADJACENT_DOMAIN_FIT
+        tier_name = "adjacent"
+        domain_reason = "Structured research areas include a configured adjacent domain."
+    elif canonical_areas & tiers["technical_transferable"]:
+        classification = DomainFitClassification.TECHNICAL_TRANSFERABLE
+        tier_name = "technical_transferable"
+        domain_reason = (
+            "Available evidence supports transferable technical fit but not a cognition, brain, "
+            "or behavior research question."
+        )
+    elif canonical_areas & tiers["lower_priority"]:
+        classification = DomainFitClassification.LOW_DOMAIN_FIT
+        tier_name = "lower_priority"
+        domain_reason = "Structured research areas match a configured lower-priority domain."
+    else:
+        classification = DomainFitClassification.INSUFFICIENT_EVIDENCE
+        tier_name = "insufficient_evidence"
+        domain_reason = "Available structured evidence is insufficient to classify domain fit."
+
+    domain_score = float(relevance["tier_scores"][tier_name])
+    evidence = (*research_areas, *methods)
+    method_score, method_matches = _weighted_match(
+        evidence, relevance["methodology_weights"], aliases
+    )
+    question_score, question_matches = _weighted_match(
+        research_areas, relevance["research_question_weights"], aliases
+    )
+    weights = relevance["component_weights"]
+    overall = (
+        domain_score * weights["domain_fit"]
+        + method_score * weights["methodological_fit"]
+        + question_score * weights["research_question_fit"]
+    ) / 100
+    method_reason = (
+        f"Method evidence matched: {', '.join(method_matches)}."
+        if method_matches
+        else "Method evidence is unavailable or unmatched; neutral method fit applied."
+    )
+    question_reason = (
+        f"Research-question evidence matched: {', '.join(question_matches)}."
+        if question_matches
+        else "Research-question evidence is unavailable or unmatched; neutral fit applied."
+    )
+    return ResearchFitAssessment(
+        overall=round(overall, 2),
+        domain_fit=domain_score,
+        methodological_fit=method_score,
+        research_question_fit=question_score,
+        classification=classification,
+        explanation=(domain_reason, method_reason, question_reason),
+    )
 
 
 def research_fit_score(
     research_areas: tuple[str, ...], interests: dict[str, Any]
 ) -> tuple[float, str]:
-    configured = interests.get("interest_weights", {})
-    weights = {str(name).casefold(): float(value) for name, value in configured.items()}
-    matches = [weights[area.casefold()] for area in research_areas if area.casefold() in weights]
-    if not research_areas:
-        return 50.0, "Research areas were not disclosed; neutral relevance applied."
-    if not matches:
-        return 20.0, "No configured research-interest match."
-    return round(
-        sum(matches) / len(matches), 2
-    ), f"Matched {len(matches)} configured research areas."
+    assessment = assess_research_fit(research_areas, interests)
+    return assessment.overall, " ".join(assessment.explanation)
 
 
 def _phd_value(job: IndustryJob) -> tuple[float, str]:
@@ -111,12 +238,20 @@ def score_job(
     preferences: dict[str, Any],
     salary_rules: dict[str, Any],
 ) -> ScoreBreakdown:
-    research, research_reason = _research_score(job, interests)
+    research = assess_research_fit(
+        job.research_areas,
+        interests,
+        methods=job.skills,
+        role_title=job.title,
+    )
     phd_value, phd_reason = _phd_value(job)
     skills, skills_reason = _skills_score(job, preferences)
     compensation, compensation_reason = _compensation_score(job, salary_rules)
     components = {
-        "research_relevance": research,
+        "research_relevance": research.overall,
+        "research_domain_fit": research.domain_fit,
+        "methodological_fit": research.methodological_fit,
+        "research_question_fit": research.research_question_fit,
         "phd_level_research_value": phd_value,
         "skills_and_career_fit": skills,
         "compensation": compensation,
@@ -127,7 +262,8 @@ def score_job(
         components=components,
         weights=weights,
         final_score=round(final, 2),
-        explanation=(research_reason, phd_reason, skills_reason, compensation_reason),
+        explanation=(*research.explanation, phd_reason, skills_reason, compensation_reason),
+        domain_fit=research.classification,
     )
 
 
@@ -137,11 +273,9 @@ def score_phd(
     interests: dict[str, Any],
     preferences: dict[str, Any],
 ) -> ScoreBreakdown:
-    research, research_reason = research_fit_score(opportunity.research_areas, interests)
-    target_cycles = set(preferences.get("phd_target_cycles", []))
-    cycle_score = 100.0 if opportunity.target_cycle in target_cycles else 40.0
-    if opportunity.target_cycle is None:
-        cycle_score = 50.0
+    research = assess_research_fit(opportunity.research_areas, interests)
+    cycle_scores = preferences.get("phd_cycle_scores", {})
+    cycle_score = float(cycle_scores.get(opportunity.target_cycle or "unknown", 40.0))
     confidence_scores = {
         OpportunityStatus.CONFIRMED_OPEN: 100.0,
         OpportunityStatus.CONFIRMED_UPCOMING: 90.0,
@@ -152,7 +286,10 @@ def score_phd(
     }
     confidence = confidence_scores[opportunity.opportunity_status]
     components = {
-        "research_fit": research,
+        "research_fit": research.overall,
+        "research_domain_fit": research.domain_fit,
+        "methodological_fit": research.methodological_fit,
+        "research_question_fit": research.research_question_fit,
         "target_cycle": cycle_score,
         "opportunity_confidence": confidence,
     }
@@ -163,10 +300,11 @@ def score_phd(
         weights=weights,
         final_score=round(final, 2),
         explanation=(
-            research_reason,
+            *research.explanation,
             f"Target cycle: {opportunity.target_cycle or 'unknown'}.",
             f"Recruitment evidence: {opportunity.opportunity_status.value}.",
         ),
+        domain_fit=research.classification,
     )
 
 
@@ -176,7 +314,7 @@ def score_event(
     interests: dict[str, Any],
     reference_date: date,
 ) -> ScoreBreakdown:
-    research, research_reason = research_fit_score(event.research_areas, interests)
+    research = assess_research_fit(event.research_areas, interests)
     if (event.region or "").casefold() == "europe":
         geography = 100.0
     elif (event.region or "").casefold() in {"north america", "australia"}:
@@ -199,7 +337,10 @@ def score_event(
             deadline_score = 60.0
         deadline_reason = f"Nearest tracked deadline is {days} days from the reference date."
     components = {
-        "research_fit": research,
+        "research_fit": research.overall,
+        "research_domain_fit": research.domain_fit,
+        "methodological_fit": research.methodological_fit,
+        "research_question_fit": research.research_question_fit,
         "geographic_priority": geography,
         "deadline_relevance": deadline_score,
     }
@@ -209,5 +350,10 @@ def score_event(
         components=components,
         weights=weights,
         final_score=round(final, 2),
-        explanation=(research_reason, f"Region: {event.region or 'unknown'}.", deadline_reason),
+        explanation=(
+            *research.explanation,
+            f"Region: {event.region or 'unknown'}.",
+            deadline_reason,
+        ),
+        domain_fit=research.classification,
     )

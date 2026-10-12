@@ -55,7 +55,7 @@ def _raw_records() -> dict[str, dict[str, object]]:
     return {
         "jobs": common
         | {
-            "title": "Research Scientist",
+            "title": "Research Scientist, Human Behavior",
             "organization": "Official Research Company",
             "official_job_id": "JOB-1",
             "source_url": "https://jobs.official.example/JOB-1",
@@ -63,7 +63,10 @@ def _raw_records() -> dict[str, dict[str, object]]:
             "adapter_source_id": "official_jobs",
             "location": "New York, United States",
             "country": "United States",
-            "research_areas": ["Machine learning"],
+            "research_areas": [
+                "Computational cognitive neuroscience",
+                "Computational models of human behavior",
+            ],
             "research_orientation": "Research-oriented",
             "education_requirement": "Unknown",
             "working_language": None,
@@ -386,7 +389,7 @@ def test_source_coverage_and_feedback_are_preserved(tmp_path: Path) -> None:
     assert job.feedback.saved is True
     assert job.feedback.hidden is False
     assert job.feedback.notes == "Pilot review"
-    assert job.score.components["research_relevance"] == 90.0
+    assert job.score.components["research_relevance"] == 87.5
 
 
 def test_verified_source_and_low_career_relevance_are_independent(tmp_path: Path) -> None:
@@ -433,8 +436,9 @@ def test_phd_required_research_role_remains_recommended_future_target(tmp_path: 
     job = preview.execution.pipelines["jobs"].records[0].opportunity
     decision = preview.recommendations.by_record_id[ids["jobs"]]
     assert job.classification.value == "FUTURE_CAREER_TARGET"
-    assert decision.classification is RecommendationClassification.HIGH_PRIORITY
-    assert preview.workbook.plans["jobs"].insert_count == 1
+    assert decision.classification is RecommendationClassification.NEEDS_REVIEW
+    assert decision.domain_fit.value == "TECHNICAL_TRANSFERABLE"
+    assert preview.workbook.plans["jobs"].insert_count == 0
 
 
 def test_uncertain_recommendation_is_held_out_of_sheet_plan(tmp_path: Path) -> None:
@@ -506,8 +510,8 @@ def test_initial_live_sync_applies_only_the_exact_approved_plan_once(
         opportunity_inserts={"jobs": 1, "phd": 1, "events": 1},
         watchlist_inserts=38,
         recommendation_counts={
-            RecommendationClassification.HIGH_PRIORITY: 3,
-            RecommendationClassification.RELEVANT: 0,
+            RecommendationClassification.HIGH_PRIORITY: 1,
+            RecommendationClassification.RELEVANT: 2,
             RecommendationClassification.NEEDS_REVIEW: 0,
             RecommendationClassification.LOW_PRIORITY: 0,
         },

@@ -22,6 +22,16 @@ def test_all_project_yaml_configuration_loads_and_validates() -> None:
     assert result["research_interests"] >= 10
     assert result["salary_weights_total"] == 100
 
+    interests = load_research_interests(PROJECT_ROOT / "config" / "research_interests.yaml")
+    assert interests["research_identity"]["primary_field"] == (
+        "Computational Cognitive Neuroscience"
+    )
+    assert interests["research_relevance"]["component_weights"] == {
+        "domain_fit": 55,
+        "methodological_fit": 25,
+        "research_question_fit": 20,
+    }
+
 
 def test_yaml_loader_uses_a_real_parser_and_rejects_invalid_escapes(tmp_path: Path) -> None:
     invalid_yaml = tmp_path / "invalid.yaml"

@@ -113,6 +113,92 @@ def load_research_interests(path: Path) -> dict[str, Any]:
         )
     if not all(isinstance(value, int) and 0 <= value <= 100 for value in weights.values()):
         raise ConfigValidationError(f"{path}: interest weights must be integers from 0 to 100")
+    revision = data.get("profile_revision")
+    if not isinstance(revision, str) or not revision.strip():
+        raise ConfigValidationError(f"{path}: profile_revision must be a non-empty string")
+    identity = data.get("research_identity")
+    if not isinstance(identity, dict) or not all(
+        isinstance(identity.get(field_name), str) and identity[field_name].strip()
+        for field_name in ("primary_field", "primary_phd_cycle", "thesis")
+    ):
+        raise ConfigValidationError(f"{path}: research_identity is incomplete")
+    tiers = data.get("interest_tiers")
+    expected_tiers = {"core", "adjacent", "technical_transferable", "lower_priority"}
+    if not isinstance(tiers, dict) or set(tiers) != expected_tiers:
+        raise ConfigValidationError(
+            f"{path}: interest_tiers must contain {', '.join(sorted(expected_tiers))}"
+        )
+    for name, values in tiers.items():
+        if not isinstance(values, list) or not all(
+            isinstance(value, str) and value.strip() for value in values
+        ):
+            raise ConfigValidationError(
+                f"{path}: interest_tiers.{name} must be a list of non-empty strings"
+            )
+    ranked_interests = {
+        value for name in ("core", "adjacent", "technical_transferable") for value in tiers[name]
+    }
+    if ranked_interests != set(interests):
+        raise ConfigValidationError(
+            f"{path}: primary_interests must equal the ranked core, adjacent, and "
+            "transferable tiers"
+        )
+    relevance = data.get("research_relevance")
+    if not isinstance(relevance, dict):
+        raise ConfigValidationError(f"{path}: research_relevance must be a mapping")
+    component_weights = relevance.get("component_weights")
+    expected_components = {"domain_fit", "methodological_fit", "research_question_fit"}
+    if not isinstance(component_weights, dict) or set(component_weights) != expected_components:
+        raise ConfigValidationError(f"{path}: invalid research_relevance.component_weights")
+    if not all(
+        isinstance(value, int) and 0 <= value <= 100 for value in component_weights.values()
+    ):
+        raise ConfigValidationError(f"{path}: research relevance weights must be 0-100 integers")
+    if sum(component_weights.values()) != 100:
+        raise ConfigValidationError(f"{path}: research relevance weights must total 100")
+    if component_weights["domain_fit"] <= max(
+        component_weights["methodological_fit"], component_weights["research_question_fit"]
+    ):
+        raise ConfigValidationError(f"{path}: domain_fit must be the largest component weight")
+    tier_scores = relevance.get("tier_scores")
+    expected_scores = {
+        "core",
+        "adjacent",
+        "technical_transferable",
+        "lower_priority",
+        "insufficient_evidence",
+    }
+    if not isinstance(tier_scores, dict) or set(tier_scores) != expected_scores:
+        raise ConfigValidationError(f"{path}: invalid research_relevance.tier_scores")
+    if not all(isinstance(value, int) and 0 <= value <= 100 for value in tier_scores.values()):
+        raise ConfigValidationError(f"{path}: research relevance tier scores must be 0-100")
+    for field_name in ("methodology_weights", "research_question_weights"):
+        values = relevance.get(field_name)
+        if (
+            not isinstance(values, dict)
+            or not values
+            or not all(
+                isinstance(key, str)
+                and key.strip()
+                and isinstance(value, int)
+                and 0 <= value <= 100
+                for key, value in values.items()
+            )
+        ):
+            raise ConfigValidationError(f"{path}: {field_name} must map terms to 0-100 integers")
+    aliases = relevance.get("aliases", {})
+    if not isinstance(aliases, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in aliases.items()
+    ):
+        raise ConfigValidationError(f"{path}: research_relevance.aliases must map strings")
+    for field_name in ("lower_priority_title_signals", "interpretability_connection_signals"):
+        values = relevance.get(field_name)
+        if (
+            not isinstance(values, list)
+            or not values
+            or not all(isinstance(value, str) and value.strip() for value in values)
+        ):
+            raise ConfigValidationError(f"{path}: {field_name} must be non-empty strings")
     return data
 
 
@@ -126,6 +212,9 @@ def load_career_preferences(path: Path) -> dict[str, Any]:
         "phd_target_cycles",
         "career_stages",
         "recommendation_rules",
+        "target_skills",
+        "preferred_job_families",
+        "phd_cycle_scores",
     }
     missing = sorted(required_keys - data.keys())
     if missing:
@@ -133,6 +222,13 @@ def load_career_preferences(path: Path) -> dict[str, Any]:
     _load_non_empty_string_list(path, "geographic_scope")
     _load_non_empty_string_list(path, "phd_target_cycles")
     _load_non_empty_string_list(path, "target_skills")
+    _load_non_empty_string_list(path, "preferred_job_families")
+    cycle_scores = data["phd_cycle_scores"]
+    if not isinstance(cycle_scores, dict) or not all(
+        isinstance(name, str) and isinstance(value, int) and 0 <= value <= 100
+        for name, value in cycle_scores.items()
+    ):
+        raise ConfigValidationError(f"{path}: phd_cycle_scores must map cycles to 0-100 integers")
     rules = data["recommendation_rules"]
     if not isinstance(rules, dict):
         raise ConfigValidationError(f"{path}: recommendation_rules must be a mapping")

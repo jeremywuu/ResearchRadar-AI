@@ -265,6 +265,31 @@ must never advance `Last_Seen`. The four source/content timestamps remain distin
 - `Content_Updated_At`: latest material source-content change.
 - `Source_Retrieved_At`: retrieval that produced the cached record.
 
+Preference recalibration does not update any of these timestamps. A plan may still carry a
+previously collected, unsynchronized observation timestamp, but that field must be identified as
+source-observation state rather than a preference change.
+
+## Research-fit assessment
+
+Each processed score retains the user-facing aggregate and three transparent research components:
+
+```text
+research_relevance or research_fit
+research_domain_fit
+methodological_fit
+research_question_fit
+domain_fit  # CORE_DOMAIN_FIT, ADJACENT_DOMAIN_FIT, TECHNICAL_TRANSFERABLE,
+            # LOW_DOMAIN_FIT, or INSUFFICIENT_EVIDENCE
+```
+
+The domain classification is rule-based personal metadata. It is not an official source fact and
+is never stored as source evidence. Missing evidence remains `INSUFFICIENT_EVIDENCE`; it is not
+converted into a negative qualification claim.
+
+Incremental recovery artifacts additionally contain `preference_configuration_hash` and the
+recommendation/domain decision for every reviewed record. These fields bind approval to the
+validated preference configuration without altering stable Record IDs.
+
 ## Recommendation review
 
 Recommendation is review metadata, not source evidence and not an opportunity status:

@@ -268,6 +268,34 @@ Completion evidence:
 - Source health and retrieval evidence now participate in the plan fingerprint even when no cell
   write is proposed.
 
+## Milestone 4D.2 — Computational cognitive neuroscience recalibration
+
+Status: complete pending user review; no Google Sheets apply is authorized.
+
+- Recenter research identity on computational questions about cognition, brain, and behavior.
+- Split research relevance into domain, method, and research-question components while preserving
+  the approved 45/25/20/10 outer job weights.
+- Keep technical AI/ML opportunities discoverable without treating generic technical keywords or
+  research titles as core-domain evidence.
+- Re-evaluate all 32 cached official-source records without a new collection or source timestamp
+  mutation.
+- Bind incremental plan fingerprints to the validated preference configuration.
+
+Acceptance evidence:
+
+- Automated tests establish that cognition/neuroscience roles outrank unrelated AI algorithm
+  roles, generic research-engineer titles do not imply core fit, cybersecurity RL is lower
+  priority, and NeuroAI/neural-decoding evidence can qualify as core fit.
+- The 32-record recalibration contains 0 core, 2 adjacent, 17 technically transferable, 11 low-fit,
+  and 2 insufficient-evidence records. The absence of current core records reflects limited source
+  evidence, not an inferred absence from the broader market.
+- The authenticated LIVE PILOT dry-run proposes no job insert or update, one PhD score update, and
+  one event score plus prior-observation update. It creates zero content-change events and performs
+  no writes.
+- The old fingerprint `24307790c4b460ffc13e521a144a63b05766658a8acce271b446411b23626e11`
+  is stale. The recalibrated plan has a different preference-bound fingerprint and requires a new
+  review before any write authorization.
+
 ## Milestone 5 — Discovery and personalization
 
 - Add a configurable open-web search adapter.

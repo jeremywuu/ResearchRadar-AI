@@ -56,8 +56,11 @@ earliest `first_seen_at`, latest `last_seen_at`, and all source URLs.
 ## Deterministic scoring
 
 - Jobs use the approved 45/25/20/10 weights for research relevance, PhD-level research value,
-  skills/career fit, and compensation. Unknown structured facts receive a documented neutral
-  score; undisclosed salary never changes the research components.
+  skills/career fit, and compensation. Research relevance is itself 55% domain fit, 25%
+  methodological fit, and 20% research-question fit. The domain component is intentionally larger
+  than either technical component, so generic AI or RL keywords cannot outrank direct cognition,
+  brain, or behavior evidence. Unknown structured facts receive a documented neutral score;
+  undisclosed salary never changes the research components.
 - PhD opportunities use 70% research fit, 20% target-cycle fit, and 10% recruitment-evidence
   confidence. Potential and historical signals remain distinct from confirmed openings.
 - Events use 60% research fit, 25% geographic priority, and 15% deadline relevance. Europe gets
@@ -66,6 +69,24 @@ earliest `first_seen_at`, latest `last_seen_at`, and all source URLs.
 
 Preference feedback creates a separate personalized score. `saved` does not alter any score;
 `hidden` removes a record from visible ranking without deleting it.
+
+`ScoreBreakdown.domain_fit` carries the five-valued domain classification independently of its
+numeric component. Recommendation rules use that classification before generic title signals:
+core evidence may be high priority, adjacent evidence may be relevant, transferable evidence stays
+reviewable, low-fit evidence stays archived, and insufficient evidence requires review. Title
+signals may identify obvious business or ambiguous roles but cannot manufacture scientific scope.
+
+## Preference-bound incremental plans
+
+An incremental plan payload contains proposed sheet operations, source observations,
+recommendation decisions, domain classifications, and a canonical SHA-256 hash of the validated
+research-interest and career-preference configuration. The plan fingerprint hashes that complete
+payload. Any relevant preference change therefore invalidates a previously approved plan even
+when source rows are unchanged.
+
+Recomputing preferences reads cached records and is not collection. It never mutates observation
+timestamps. Score-only or recommendation-only sheet proposals generate no source-content change
+events.
 
 ## Seams and adapters
 

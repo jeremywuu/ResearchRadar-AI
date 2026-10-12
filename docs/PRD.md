@@ -77,6 +77,29 @@ Base scoring weights:
 
 Current eligibility is a classification input, not a relevance penalty.
 
+### Computational cognitive neuroscience research identity
+
+The primary research identity is computational cognitive neuroscience: computational questions
+about human cognition, brain, and behavior. Generic AI, machine learning, reinforcement learning,
+foundation-model, and research-engineering work is technically transferable but does not receive
+core-domain priority without relevant scientific evidence.
+
+Research relevance keeps the approved 45% outer weight and is internally composed of research
+domain fit (55%), methodological fit (25%), and research-question fit (20%). Domain fit therefore
+outweighs generic technical keywords. The five domain classifications are
+`CORE_DOMAIN_FIT`, `ADJACENT_DOMAIN_FIT`, `TECHNICAL_TRANSFERABLE`, `LOW_DOMAIN_FIT`, and
+`INSUFFICIENT_EVIDENCE`.
+
+Domain fit is independent of official-source verification, opportunity status, career stage,
+recommendation priority, and user feedback. Unknown evidence is neutral or review-needed rather
+than negative. A generic job title is not evidence of a cognition or neuroscience research
+question; AI interpretability is adjacent only when available evidence connects it to cognition,
+brain, behavior, or neural representations.
+
+Fall 2028 is the primary PhD cycle. Earlier cycles remain monitored as references. Relevant
+PhD-required industry roles remain preserved as future career targets even when they are not
+recommended for immediate synchronization.
+
 ## Compensation policy
 
 The initial MVP extracts explicitly disclosed compensation, preserves the original source text,
@@ -226,6 +249,17 @@ filtering, ordering, timeouts, blocks, partial retrieval, or parser failure cann
 Only explicit official evidence may produce `CONFIRMED_CLOSED`; otherwise prior facts and user
 feedback remain preserved. The milestone may produce a read-only LIVE PILOT plan and deterministic
 prospective change events, but it cannot write opportunity rows or logs to Google Sheets.
+
+## Milestone 4D.2 preference-recalibration boundary
+
+Preference recalibration uses cached source records only and is not a new source observation. It
+may change deterministic scores, domain classifications, and recommendation priority, but it does
+not change `First_Seen`, `Last_Seen`, `Content_Updated_At`, source status, or user feedback and does
+not create source-content Change Log events.
+
+Every incremental plan fingerprint includes a canonical hash of the research-interest and career-
+preference configuration. An approval created under a prior preference configuration is stale and
+cannot authorize a recalibrated plan. The recalibration milestone remains dry-run only.
 
 ## Future capabilities
 

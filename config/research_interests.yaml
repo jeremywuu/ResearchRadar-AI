@@ -1,35 +1,203 @@
 version: 1
+profile_revision: "2026-10-12-computational-cognitive-neuroscience-v1"
+
+research_identity:
+  primary_field: "Computational Cognitive Neuroscience"
+  academic_program: "Master's in Psychology: Theory and Research, KU Leuven"
+  thesis: "Computational Characterization of Multidimensional Visual Representations"
+  current_research_team: "Prof. Hans Op de Beeck research team"
+  planned_training: "Computational modeling internship associated with Prof. Kobe Desender's lab"
+  primary_phd_cycle: "Fall 2028"
+  long_term_goal: "PhD followed by research-oriented work involving cognition, neural data, computational models, AI, or neurotechnology"
+
+interest_tiers:
+  core:
+    - "Cognitive neuroscience"
+    - "Computational cognitive neuroscience"
+    - "Computational cognitive science"
+    - "Cognitive modeling"
+    - "Neural representations"
+    - "Decision neuroscience"
+    - "Computational models of human behavior"
+    - "Reinforcement learning models of cognition"
+    - "Neural encoding and decoding"
+    - "Brain-behavior relationships"
+    - "NeuroAI and brain-model alignment"
+  adjacent:
+    - "Computational neuroscience"
+    - "Brain-computer interfaces"
+    - "Neurotechnology"
+    - "Human-AI interaction"
+    - "Computational psychiatry"
+    - "Quantitative behavioral science"
+    - "Computational neuroimaging"
+    - "Neuroscience-inspired machine learning"
+    - "Neural data science"
+    - "Cognitive and behavioral decision science"
+    - "AI interpretability connected to cognition"
+  technical_transferable:
+    - "Machine learning"
+    - "Reinforcement learning"
+    - "Artificial intelligence"
+    - "AI research engineering"
+    - "Foundation model research"
+    - "AI model evaluation"
+    - "Data science"
+  lower_priority:
+    - "Pure LLM algorithm optimization"
+    - "General AI infrastructure"
+    - "Cybersecurity reinforcement learning"
+    - "Large-scale model training engineering"
+    - "Unrelated technical research"
+    - "Recruiting"
+    - "Sales"
+    - "Legal"
+    - "Go-to-market"
 
 primary_interests:
   - "Cognitive neuroscience"
-  - "Computational neuroscience"
-  - "Computational modeling"
+  - "Computational cognitive neuroscience"
+  - "Computational cognitive science"
+  - "Cognitive modeling"
   - "Neural representations"
-  - "Decision-making"
+  - "Decision neuroscience"
+  - "Computational models of human behavior"
+  - "Reinforcement learning models of cognition"
+  - "Neural encoding and decoding"
+  - "Brain-behavior relationships"
+  - "NeuroAI and brain-model alignment"
+  - "Computational neuroscience"
+  - "Brain-computer interfaces"
+  - "Neurotechnology"
+  - "Human-AI interaction"
+  - "Computational psychiatry"
+  - "Quantitative behavioral science"
+  - "Computational neuroimaging"
+  - "Neuroscience-inspired machine learning"
+  - "Neural data science"
+  - "Cognitive and behavioral decision science"
+  - "AI interpretability connected to cognition"
+  - "Machine learning"
   - "Reinforcement learning"
   - "Artificial intelligence"
-  - "Machine learning"
-  - "Human-AI interaction"
-  - "Brain-computer interfaces"
-  - "Neural decoding"
+  - "AI research engineering"
+  - "Foundation model research"
+  - "AI model evaluation"
   - "Data science"
-  - "Behavioral science"
 
 interest_weights:
-  Cognitive neuroscience: 95
-  Computational neuroscience: 100
-  Computational modeling: 100
+  Cognitive neuroscience: 100
+  Computational cognitive neuroscience: 100
+  Computational cognitive science: 100
+  Cognitive modeling: 100
   Neural representations: 100
-  Decision-making: 95
-  Reinforcement learning: 100
-  Artificial intelligence: 90
-  Machine learning: 90
-  Human-AI interaction: 90
-  Brain-computer interfaces: 100
-  Neural decoding: 100
-  Data science: 60
-  Behavioral science: 80
+  Decision neuroscience: 100
+  Computational models of human behavior: 100
+  Reinforcement learning models of cognition: 100
+  Neural encoding and decoding: 100
+  Brain-behavior relationships: 100
+  NeuroAI and brain-model alignment: 100
+  Computational neuroscience: 82
+  Brain-computer interfaces: 90
+  Neurotechnology: 88
+  Human-AI interaction: 86
+  Computational psychiatry: 88
+  Quantitative behavioral science: 84
+  Computational neuroimaging: 92
+  Neuroscience-inspired machine learning: 82
+  Neural data science: 88
+  Cognitive and behavioral decision science: 88
+  AI interpretability connected to cognition: 82
+  Machine learning: 50
+  Reinforcement learning: 55
+  Artificial intelligence: 45
+  AI research engineering: 50
+  Foundation model research: 42
+  AI model evaluation: 48
+  Data science: 45
+
+research_relevance:
+  component_weights:
+    domain_fit: 55
+    methodological_fit: 25
+    research_question_fit: 20
+  tier_scores:
+    core: 100
+    adjacent: 82
+    technical_transferable: 48
+    lower_priority: 12
+    insufficient_evidence: 50
+  aliases:
+    "decision-making": "Decision neuroscience"
+    "brain-computer interface": "Brain-computer interfaces"
+    "neural decoding": "Neural encoding and decoding"
+    "behavioral science": "Quantitative behavioral science"
+    "computational modeling": "Cognitive modeling"
+  methodology_weights:
+    "Computational modeling": 100
+    "Cognitive modeling": 100
+    "Reinforcement learning models of cognition": 100
+    "Neural encoding and decoding": 100
+    "Computational neuroimaging": 100
+    "EEG": 95
+    "fMRI": 100
+    "RSA": 100
+    "MVPA": 100
+    "Neural data analysis": 95
+    "Brain-computer interfaces": 90
+    "Machine learning": 62
+    "Reinforcement learning": 65
+    "Data science": 55
+    "Artificial intelligence": 45
+  research_question_weights:
+    "Cognitive neuroscience": 100
+    "Computational cognitive neuroscience": 100
+    "Computational cognitive science": 100
+    "Cognitive modeling": 100
+    "Neural representations": 100
+    "Decision neuroscience": 100
+    "Computational models of human behavior": 100
+    "Reinforcement learning models of cognition": 100
+    "Neural encoding and decoding": 100
+    "Brain-behavior relationships": 100
+    "NeuroAI and brain-model alignment": 100
+    "Computational neuroscience": 78
+    "Human-AI interaction": 82
+    "Computational psychiatry": 85
+    "Brain-computer interfaces": 80
+    "Machine learning": 35
+    "Reinforcement learning": 38
+    "Artificial intelligence": 30
+    "Data science": 32
+  lower_priority_title_signals:
+    - "recruiter"
+    - "recruiting"
+    - "counsel"
+    - "legal"
+    - "sales"
+    - "gtm"
+    - "political research"
+    - "policy advocacy"
+    - "cybersecurity rl"
+    - "chip design rl"
+    - "code rl"
+    - "infrastructure engineer"
+  interpretability_connection_signals:
+    - "cognition"
+    - "cognitive"
+    - "neural representation"
+    - "brain"
+    - "human behavior"
+
+background_methods:
+  - "EEG"
+  - "fMRI"
+  - "RSA"
+  - "MVPA"
+  - "Reinforcement learning models"
+  - "Neural and behavioral representations"
+  - "Human-AI interaction"
 
 exploration_policy:
   enabled: true
-  description: "Retain adjacent high-quality topics instead of narrowing all results to known interests."
+  description: "Retain technically transferable opportunities without allowing generic AI keywords to outrank cognition- and neuroscience-centered research."

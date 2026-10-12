@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from research_radar.config import load_career_preferences, load_watchlist
+from research_radar.config import load_career_preferences, load_research_interests, load_watchlist
 from research_radar.models import (
     AcademicEvent,
     CompensationDisclosureStatus,
+    DomainFitClassification,
     EducationRequirement,
     EnglishCompatibility,
     ExecutionReport,
@@ -118,6 +119,9 @@ class RecommendationDecision:
     record_id: str
     category: str
     classification: RecommendationClassification
+    domain_fit: DomainFitClassification
+    methodological_fit: float
+    research_question_fit: float
     explanation: str
 
 
@@ -184,6 +188,7 @@ class LiveSheetsPreview:
     offline: bool
     target_environment: TargetEnvironment
     feedback: FeedbackLoadResult
+    preference_configuration_hash: str
     sheet_synced_at: datetime | None = None
 
 
@@ -355,6 +360,8 @@ def prepare_live_sheets_preview(
         raise LiveDataError(f"feedback Record_ID values are not linked to known records: {joined}")
     provenance = audit_provenance(execution)
     preferences = load_career_preferences(project_root / "config" / "career_preferences.yaml")
+    interests = load_research_interests(project_root / "config" / "research_interests.yaml")
+    preference_configuration_hash = _preference_configuration_hash(interests, preferences)
     recommendations = classify_recommendations(
         execution,
         provenance,
@@ -402,6 +409,7 @@ def prepare_live_sheets_preview(
         offline=offline,
         target_environment=environment,
         feedback=feedback,
+        preference_configuration_hash=preference_configuration_hash,
     )
 
 
@@ -576,6 +584,18 @@ def reconcile_incremental_plan(
 def _incremental_plan_payload(preview: LiveSheetsPreview) -> dict[str, Any]:
     plans = (*preview.workbook.plans.values(), preview.watchlist_plan)
     return {
+        "preference_configuration_hash": preview.preference_configuration_hash,
+        "recommendations": {
+            decision.record_id: {
+                "classification": decision.classification.value,
+                "domain_fit": decision.domain_fit.value,
+                "methodological_fit": decision.methodological_fit,
+                "research_question_fit": decision.research_question_fit,
+            }
+            for decision in sorted(
+                preview.recommendations.decisions, key=lambda item: item.record_id
+            )
+        },
         "sheets": {
             plan.sheet_name: {
                 "inserts": [operation.row for operation in plan.inserts],
@@ -612,6 +632,17 @@ def _incremental_plan_payload(preview: LiveSheetsPreview) -> dict[str, Any]:
             for source_id, source in sorted(preview.coverage.items())
         },
     }
+
+
+def _preference_configuration_hash(
+    interests: Mapping[str, Any], preferences: Mapping[str, Any]
+) -> str:
+    relevant = {
+        "research_interests": interests,
+        "career_preferences": preferences,
+    }
+    canonical = json.dumps(relevant, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _comparison_value(value: Any) -> Any:
@@ -1024,6 +1055,9 @@ def _rule_based_interpretations(processed: ProcessedOpportunity) -> tuple[str, .
     values = [
         f"classification={opportunity.classification.value}",
         f"priority_score={processed.score.final_score}",
+        f"domain_fit={processed.score.domain_fit.value}",
+        f"methodological_fit={processed.score.components['methodological_fit']}",
+        f"research_question_fit={processed.score.components['research_question_fit']}",
     ]
     if isinstance(opportunity, IndustryJob):
         values.extend(
@@ -1059,29 +1093,47 @@ def classify_recommendations(
                     signals=signals,
                     thresholds=thresholds,
                 )
-            elif processed.score.final_score >= thresholds["high_priority"]:
+            elif (
+                processed.score.domain_fit is DomainFitClassification.CORE_DOMAIN_FIT
+                and processed.score.final_score >= thresholds["high_priority"]
+            ):
                 classification = RecommendationClassification.HIGH_PRIORITY
                 explanation = (
                     f"Deterministic category score {processed.score.final_score:.1f} meets the "
                     "configured high-priority threshold."
                 )
-            elif processed.score.final_score >= thresholds["relevant"]:
+            elif (
+                processed.score.domain_fit
+                in {
+                    DomainFitClassification.CORE_DOMAIN_FIT,
+                    DomainFitClassification.ADJACENT_DOMAIN_FIT,
+                }
+                and processed.score.final_score >= thresholds["relevant"]
+            ):
                 classification = RecommendationClassification.RELEVANT
                 explanation = (
                     f"Deterministic category score {processed.score.final_score:.1f} meets the "
                     "configured relevance threshold."
                 )
-            else:
+            elif processed.score.domain_fit is DomainFitClassification.LOW_DOMAIN_FIT:
                 classification = RecommendationClassification.LOW_PRIORITY
                 explanation = (
-                    f"Deterministic category score {processed.score.final_score:.1f} is below "
-                    "the configured relevance threshold."
+                    "Available evidence indicates low fit with the configured research domain."
+                )
+            else:
+                classification = RecommendationClassification.NEEDS_REVIEW
+                explanation = (
+                    f"Domain fit is {processed.score.domain_fit.value}; retain for review without "
+                    "treating technical fit as core research relevance."
                 )
             decisions.append(
                 RecommendationDecision(
                     record_id=opportunity.opportunity_id,
                     category=category,
                     classification=classification,
+                    domain_fit=processed.score.domain_fit,
+                    methodological_fit=processed.score.components["methodological_fit"],
+                    research_question_fit=processed.score.components["research_question_fit"],
                     explanation=explanation,
                 )
             )
@@ -1107,34 +1159,51 @@ def _classify_job_recommendation(
             f"Title signal '{phrase}' indicates recruiting, legal, sales, or unrelated "
             "business work.",
         )
-    if matched["high_priority"] and research_score >= thresholds["high_priority"]:
-        phrase = matched["high_priority"]
+    domain_fit = processed.score.domain_fit
+    if domain_fit is DomainFitClassification.LOW_DOMAIN_FIT:
         return (
-            RecommendationClassification.HIGH_PRIORITY,
-            f"Title signal '{phrase}' and research relevance {research_score:.1f} match "
-            "priority interests.",
+            RecommendationClassification.LOW_PRIORITY,
+            "Available evidence indicates low domain fit despite any transferable techniques.",
         )
-    if matched["needs_review"]:
+    if matched["needs_review"] and not (matched["high_priority"] or matched["relevant"]):
         phrase = matched["needs_review"]
         return (
             RecommendationClassification.NEEDS_REVIEW,
-            f"Title signal '{phrase}' is adjacent or ambiguous and needs manual career-fit review.",
+            f"Title signal '{phrase}' is ambiguous for career fit and requires manual review, "
+            "independently of research-domain scoring.",
         )
-    if matched["relevant"] and research_score >= thresholds["relevant"]:
+    if (
+        domain_fit is DomainFitClassification.CORE_DOMAIN_FIT
+        and research_score >= thresholds["high_priority"]
+    ):
+        phrase = matched["high_priority"]
+        return (
+            RecommendationClassification.HIGH_PRIORITY,
+            f"Core domain evidence and research relevance {research_score:.1f} meet the "
+            "high-priority rule" + (f"; title signal '{phrase}' is supportive." if phrase else "."),
+        )
+    if (
+        domain_fit is DomainFitClassification.ADJACENT_DOMAIN_FIT
+        and research_score >= thresholds["relevant"]
+    ):
         phrase = matched["relevant"]
         return (
             RecommendationClassification.RELEVANT,
-            f"Title signal '{phrase}' and research relevance {research_score:.1f} meet "
-            "the relevance rule.",
+            f"Adjacent domain evidence and research relevance {research_score:.1f} meet the "
+            "relevance rule" + (f"; title signal '{phrase}' is supportive." if phrase else "."),
         )
-    if research_score >= thresholds["relevant"]:
+    if domain_fit is DomainFitClassification.TECHNICAL_TRANSFERABLE:
+        phrase = matched["needs_review"] or matched["high_priority"] or matched["relevant"]
+        detail = f" Title signal '{phrase}' is not sufficient domain evidence." if phrase else ""
         return (
             RecommendationClassification.NEEDS_REVIEW,
-            "Research score is relevant, but the title lacks a configured positive career signal.",
+            "Technical research skills are transferable, but available evidence does not show a "
+            f"cognition, brain, or behavior research question.{detail}",
         )
     return (
-        RecommendationClassification.LOW_PRIORITY,
-        f"Research relevance {research_score:.1f} is below the configured threshold.",
+        RecommendationClassification.NEEDS_REVIEW,
+        "Available evidence is insufficient to determine computational cognitive neuroscience "
+        "relevance.",
     )
 
 
@@ -1283,9 +1352,10 @@ def _write_review_report(
                 heading,
                 "",
                 "| Record_ID | Title | Organization | Category | Research | PhD | Career stage | "
-                "Recommendation | Education | Salary | Official URL | Verification | Missing | "
+                "Domain fit | Method | Question | Recommendation | Education | Salary | "
+                "Official URL | Verification | Missing | "
                 "Proposed action | Explanation |",
-                "|---|---|---|---|---:|---:|---|---|---|---|---|---|---|---|---|",
+                "|---|---|---|---|---:|---:|---|---|---:|---:|---|---|---|---|---|---|---|---|",
             ]
         )
         for category, report in execution.pipelines.items():
@@ -1318,6 +1388,9 @@ def _write_review_report(
                             research,
                             phd,
                             opportunity.classification.value,
+                            decision.domain_fit.value,
+                            f"{decision.methodological_fit:.1f}",
+                            f"{decision.research_question_fit:.1f}",
                             decision.classification.value,
                             _md(education),
                             _md(salary),
