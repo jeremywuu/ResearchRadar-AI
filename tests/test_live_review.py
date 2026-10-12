@@ -14,7 +14,9 @@ from research_radar.live_integration import (
     LiveDataError,
     ObservationState,
     RecommendationClassification,
+    ScoringOnlySyncApproval,
     TargetEnvironment,
+    apply_incremental_live_score_sync,
     apply_initial_live_pilot_sync,
     configured_live_pilot_adapter,
     prepare_incremental_live_sync,
@@ -792,6 +794,84 @@ def test_incremental_authorization_requires_matching_fingerprint_and_confirmatio
         approved_fingerprint=plan.plan_fingerprint,
         confirmation=INCREMENTAL_APPLY_CONFIRMATION,
     )
+
+
+def test_incremental_score_apply_updates_only_scores_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+    empty = PilotMemoryAdapter()
+    initial = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "initial-review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+        adapter=empty,
+    )
+    seeded: dict[str, list[dict[str, object]]] = {}
+    score_fields = {
+        "jobs": ("Research_Relevance", "Overall_Priority_Score"),
+        "phd": ("Research_Fit_Score",),
+        "events": ("Research_Relevance", "Priority_Score"),
+    }
+    for category, fields in score_fields.items():
+        row = dict(initial.preview.workbook.plans[category].inserts[0].row)
+        for field in fields:
+            row[field] = 0.0
+        seeded[initial.preview.workbook.plans[category].sheet_name] = [row]
+    seeded["Watchlist"] = [
+        dict(operation.row) for operation in initial.preview.watchlist_plan.inserts
+    ]
+    adapter = PilotMemoryAdapter(seeded)
+    monkeypatch.setenv("GOOGLE_LIVE_PILOT_SPREADSHEET_ID", "pilot-id")
+    monkeypatch.setenv("RESEARCH_RADAR_SHEETS_ENV", "live-pilot")
+    monkeypatch.setenv("RESEARCH_RADAR_DATA_MODE", "live")
+    preview = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "preview",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+        adapter=adapter,
+    )
+
+    result = apply_incremental_live_score_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "apply",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+        adapter=adapter,
+        approved_fingerprint=preview.plan_fingerprint,
+        confirmation=INCREMENTAL_APPLY_CONFIRMATION,
+        approval=ScoringOnlySyncApproval(
+            update_counts={"jobs": 1, "phd": 1, "events": 1},
+            watchlist_unchanged=38,
+        ),
+    )
+
+    assert result.applied_sheets == (
+        "Industry_Jobs",
+        "PhD_Opportunities",
+        "Events",
+    )
+    assert {operation[0] for operation in adapter.write_operations} == {
+        "Industry_Jobs",
+        "PhD_Opportunities",
+        "Events",
+    }
+    repeated = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "after",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+        adapter=adapter,
+    )
+    assert all(plan.update_count == 0 for plan in repeated.preview.workbook.plans.values())
+    assert adapter.read_worksheet("Change_Log").rows == []
 
 
 @pytest.mark.parametrize(

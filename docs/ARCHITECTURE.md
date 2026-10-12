@@ -238,9 +238,12 @@ therefore produce the same approval identity.
 The ignored JSON plan artifact retains enough expected and desired values to audit a later partial
 failure. `reconcile_incremental_plan` rereads current rows by `Record_ID`, separates completed and
 pending actions, flags concurrent values, and identifies missing deterministic Change_Log event
-IDs. It never retries writes. A future apply must rebuild the plan, match the separately approved
-fingerprint, require the exact deliberate confirmation phrase, revalidate target identity and
-provenance, and refuse unresolved conflicts.
+IDs. It never retries writes. The narrowly scoped score-reconciliation apply rebuilds the plan,
+matches the separately approved fingerprint, requires the exact deliberate confirmation phrase,
+revalidates target identity and provenance, and refuses unresolved conflicts. It additionally
+requires exactly 13 job, one PhD, and one event update, restricts changed cells to approved score
+columns, and refuses inserts, watchlist writes, or Change Log events. General incremental and
+production writes remain disabled.
 
 Meaningful source-change events are field-aware. Titles, locations, qualifications, salary,
 deadlines, recruitment/funding status, research fields, and conference dates are meaningful.

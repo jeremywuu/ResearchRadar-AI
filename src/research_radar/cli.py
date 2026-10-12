@@ -14,6 +14,7 @@ from research_radar.live_integration import (
     DataMode,
     LiveDataError,
     TargetEnvironment,
+    apply_incremental_live_score_sync,
     configured_live_pilot_adapter,
     prepare_incremental_live_sync,
     prepare_live_sheets_preview,
@@ -77,6 +78,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--incremental",
         action="store_true",
         help="build a repeatable live-pilot plan with an auditable fingerprint",
+    )
+    sheets_sync.add_argument(
+        "--approved-fingerprint",
+        help="exact reviewed incremental plan fingerprint required for --apply",
+    )
+    sheets_sync.add_argument(
+        "--confirmation",
+        help="explicit confirmation phrase required for incremental LIVE PILOT --apply",
     )
 
     sheets_status = subparsers.add_parser(
@@ -278,12 +287,28 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             if args.live:
                 if args.apply:
-                    mode = "incremental live" if args.incremental else "initial live"
-                    print(
-                        f"{mode} apply is disabled; review a dry-run plan and obtain "
-                        "separate fingerprint-bound authorization"
+                    if not args.incremental:
+                        print(
+                            "initial live apply is disabled; review a dry-run plan and obtain "
+                            "separate fingerprint-bound authorization"
+                        )
+                        return 1
+                    pilot_adapter = _required_live_pilot_adapter(for_write=True)
+                    result = apply_incremental_live_score_sync(
+                        project_root=args.project_root,
+                        live_data_dir=args.live_data_dir,
+                        review_dir=args.review_dir,
+                        generated_at=observed_at,
+                        reference_date=args.reference_date,
+                        adapter=pilot_adapter,
+                        approved_fingerprint=args.approved_fingerprint or "",
+                        confirmation=args.confirmation or "",
                     )
-                    return 1
+                    print("Google Sheets incremental score reconciliation (apply)")
+                    print(f"plan fingerprint: {result.plan.plan_fingerprint}")
+                    print(f"updated sheets: {', '.join(result.applied_sheets)}")
+                    print("no inserts, feedback writes, or Change_Log events were performed")
+                    return 0
                 incremental = None
                 if args.incremental:
                     pilot_adapter = _required_live_pilot_adapter()

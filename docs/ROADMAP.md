@@ -344,6 +344,18 @@ Verification evidence:
 - Repeated dry-runs over unchanged inputs produced the same preference- and target-bound plan
   fingerprint.
 
+### One-time scoring reconciliation
+
+Status: complete; only the separately approved LIVE PILOT score cells were written.
+
+- Rebuilt the approved plan immediately before writing and matched fingerprint
+  `735889b24307eca84a9a35f97a95a5922b45e28461a4621875aa73bb94cad9ae`.
+- Updated personalized scores for 13 existing jobs, one PhD record, and one event while refusing
+  inserts, watchlist changes, feedback writes, and source-content Change Log events.
+- Preserved all record IDs and source timestamps. The post-write dry-run reported 13/1/1
+  opportunities and 38 watchlist rows unchanged, with zero inserts, updates, invalid records, or
+  conflicts.
+
 ## Milestone 5 — Discovery and personalization
 
 - Add a configurable open-web search adapter.

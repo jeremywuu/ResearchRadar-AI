@@ -207,6 +207,24 @@ class IncrementalLiveSyncPlan:
 
 
 @dataclass(frozen=True)
+class ScoringOnlySyncApproval:
+    update_counts: Mapping[str, int]
+    watchlist_unchanged: int
+
+
+APPROVED_SCORING_ONLY_SYNC = ScoringOnlySyncApproval(
+    update_counts={"jobs": 13, "phd": 1, "events": 1},
+    watchlist_unchanged=38,
+)
+
+
+@dataclass(frozen=True)
+class IncrementalLiveSyncResult:
+    plan: IncrementalLiveSyncPlan
+    applied_sheets: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RecoverySheetPlan:
     completed_record_ids: tuple[str, ...]
     pending_record_ids: tuple[str, ...]
@@ -481,6 +499,92 @@ def validate_incremental_apply_authorization(
         raise LiveDataError("incremental plan contains invalid records or unresolved conflicts")
     if plan.preview.provenance.blocked_count:
         raise LiveDataError("incremental plan contains provenance-blocked records")
+
+
+def apply_incremental_live_score_sync(
+    *,
+    project_root: Path,
+    live_data_dir: Path,
+    review_dir: Path,
+    generated_at: datetime,
+    reference_date: date,
+    adapter: SheetsAdapter,
+    approved_fingerprint: str,
+    confirmation: str,
+    approval: ScoringOnlySyncApproval = APPROVED_SCORING_ONLY_SYNC,
+) -> IncrementalLiveSyncResult:
+    """Apply one fingerprint-bound score-only plan to the dedicated LIVE PILOT."""
+
+    expected_id = validate_live_pilot_write_environment()
+    validate_live_pilot_identity(adapter, expected_spreadsheet_id=expected_id)
+    plan = prepare_incremental_live_sync(
+        project_root=project_root,
+        live_data_dir=live_data_dir,
+        review_dir=review_dir,
+        generated_at=generated_at,
+        reference_date=reference_date,
+        adapter=adapter,
+    )
+    validate_incremental_apply_authorization(
+        plan,
+        approved_fingerprint=approved_fingerprint,
+        confirmation=confirmation,
+    )
+    _validate_scoring_only_incremental_plan(plan, approval)
+
+    applied: list[str] = []
+    try:
+        for category in ("jobs", "phd", "events"):
+            sheet_plan = plan.preview.workbook.plans[category]
+            adapter.apply_plan(sheet_plan, dry_run=False)
+            applied.append(sheet_plan.sheet_name)
+    except Exception as exc:
+        completed = ", ".join(applied) or "none"
+        raise LiveDataError(
+            f"score-only synchronization failed after completed sheets: {completed}; "
+            "do not retry apply without inspecting the workbook"
+        ) from exc
+    return IncrementalLiveSyncResult(plan=plan, applied_sheets=tuple(applied))
+
+
+def _validate_scoring_only_incremental_plan(
+    plan: IncrementalLiveSyncPlan,
+    approval: ScoringOnlySyncApproval,
+) -> None:
+    allowed_fields = {
+        "jobs": {"Research_Relevance", "Overall_Priority_Score"},
+        "phd": {"Research_Fit_Score"},
+        "events": {"Research_Relevance", "Priority_Score"},
+    }
+    problems: list[str] = []
+    for category, expected_count in approval.update_counts.items():
+        sheet_plan = plan.preview.workbook.plans[category]
+        if sheet_plan.update_count != expected_count:
+            problems.append(
+                f"{category} updates are {sheet_plan.update_count}, expected {expected_count}"
+            )
+        if sheet_plan.insert_count:
+            problems.append(f"{category} contains inserts")
+        if sheet_plan.change_log_rows:
+            problems.append(f"{category} contains Change_Log events")
+        for operation in sheet_plan.updates:
+            changed = set(operation.changed_fields)
+            if not changed or not changed <= allowed_fields[category]:
+                problems.append(
+                    f"{category} update {operation.record_id} contains non-scoring fields"
+                )
+    watchlist = plan.preview.watchlist_plan
+    if watchlist.insert_count or watchlist.update_count:
+        problems.append("watchlist contains writes")
+    if len(watchlist.unchanged_record_ids) != approval.watchlist_unchanged:
+        problems.append(
+            f"watchlist unchanged count is {len(watchlist.unchanged_record_ids)}, "
+            f"expected {approval.watchlist_unchanged}"
+        )
+    if watchlist.change_log_rows:
+        problems.append("watchlist contains Change_Log events")
+    if problems:
+        raise LiveDataError("approved scoring-only plan mismatch: " + "; ".join(problems))
 
 
 def resolve_observation_state(

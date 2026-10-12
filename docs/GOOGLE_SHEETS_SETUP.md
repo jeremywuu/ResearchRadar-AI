@@ -186,8 +186,20 @@ report, a local recovery artifact, and a plan fingerprint. `My_Feedback` is read
 command. A blank feedback `Updated_At` is accepted as unknown. `Record_ID` must be copied exactly
 from an opportunity sheet; a job title is not an identifier and is rejected rather than guessed.
 
-Incremental `--apply` is disabled in Milestone 4C.4. A future separately authorized apply must use
+General incremental `--apply` remains disabled. The one-time scoring-reconciliation path requires
 the freshly rebuilt matching fingerprint, the deliberate confirmation phrase
 `CONFIRM_LIVE_PILOT_INCREMENTAL`, valid provenance, zero unresolved conflicts, the exact LIVE PILOT
-ID/title/environment, and an explicit `--apply`. Never reuse a fingerprint after worksheet or local
-snapshot state changes.
+ID/title/environment, and an explicit `--apply`. It accepts only the reviewed 13 job, one PhD, and
+one event score updates; inserts, watchlist writes, feedback writes, and Change Log events are
+refused. Never reuse a fingerprint after worksheet or local snapshot state changes.
+
+```bash
+research-radar sheets-sync --live --incremental --apply \
+  --approved-fingerprint REVIEWED_SHA256 \
+  --confirmation CONFIRM_LIVE_PILOT_INCREMENTAL \
+  --live-data-dir REVIEWED_SNAPSHOT_DIRECTORY \
+  --reference-date YYYY-MM-DD
+```
+
+This command is appropriate only after a separately authorized dry-run. It does not provide a
+general production-write bypass.

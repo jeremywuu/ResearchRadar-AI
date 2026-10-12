@@ -137,12 +137,20 @@ def test_cli_live_sheets_preview_is_offline_and_never_writes(
     assert "no writes performed" in output
 
 
-def test_cli_incremental_live_apply_remains_disabled_before_adapter_access(
+def test_cli_incremental_live_apply_requires_fingerprint_bound_authorization(
     monkeypatch: pytest.MonkeyPatch, capsys: object
 ) -> None:
+    adapter = object()
     monkeypatch.setattr(
         "research_radar.cli._required_live_pilot_adapter",
-        lambda **_: pytest.fail("adapter must not load for a disabled apply"),
+        lambda **_: adapter,
+    )
+    monkeypatch.setattr(
+        "research_radar.cli.apply_incremental_live_score_sync",
+        lambda **kwargs: SimpleNamespace(
+            plan=SimpleNamespace(plan_fingerprint=kwargs["approved_fingerprint"]),
+            applied_sheets=("Industry_Jobs", "PhD_Opportunities", "Events"),
+        ),
     )
 
     exit_code = main(
@@ -151,14 +159,20 @@ def test_cli_incremental_live_apply_remains_disabled_before_adapter_access(
             "--live",
             "--incremental",
             "--apply",
+            "--approved-fingerprint",
+            "approved-plan",
+            "--confirmation",
+            "CONFIRM_LIVE_PILOT_INCREMENTAL",
             "--reference-date",
             "2026-10-12",
         ]
     )
 
     output = capsys.readouterr().out  # type: ignore[attr-defined]
-    assert exit_code == 1
-    assert "incremental live apply is disabled" in output
+    assert exit_code == 0
+    assert "incremental score reconciliation (apply)" in output
+    assert "plan fingerprint: approved-plan" in output
+    assert "no inserts, feedback writes, or Change_Log events" in output
 
 
 def test_cli_incremental_live_dry_run_reports_feedback_and_fingerprint(
