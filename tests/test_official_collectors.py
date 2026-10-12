@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import ssl
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
 
+from research_radar.collectors import http as http_module
 from research_radar.collectors.base import SourceDescriptor
 from research_radar.collectors.http import HttpClient, HttpResponse, HttpRetrievalError
 from research_radar.collectors.official import (
@@ -163,6 +165,49 @@ def test_http_client_retries_rate_limit_and_timeout() -> None:
     client = HttpClient(transport=flaky, sleeper=lambda _: None)
     assert client.get("https://example.org/data", accept="application/json").status == 200
     assert calls == 3
+
+
+def test_default_http_transport_uses_verified_hostname_checking_context(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeHeaders:
+        def items(self):
+            return []
+
+    class FakeResponse:
+        status = 200
+        headers = FakeHeaders()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def geturl(self) -> str:
+            return "https://example.org/robots.txt"
+
+        def read(self) -> bytes:
+            return b"ok"
+
+    def fake_urlopen(request, *, timeout, context):
+        captured.update(timeout=timeout, context=context, request=request)
+        return FakeResponse()
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.setattr(http_module, "urlopen", fake_urlopen)
+
+    response_value = HttpClient(max_attempts=1).get(
+        "https://example.org/robots.txt", accept="text/plain"
+    )
+
+    context = captured["context"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode is ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+    assert len(context.get_ca_certs()) > 0
+    assert captured["timeout"] == 15.0
+    assert response_value.status == 200
 
 
 def test_ucl_html_extracts_only_explicit_cycle_deadline_and_funding() -> None:

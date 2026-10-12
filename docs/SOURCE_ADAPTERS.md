@@ -84,8 +84,29 @@ Nothing in this milestone writes live opportunities to Google Sheets.
    cases.
 7. Run a bounded, explicit `collect ... --live` smoke test and document actual limitations.
 
-On this Mac, Python may require a configured trusted CA bundle for HTTPS verification. TLS
-verification must never be disabled. The Milestone 4D.1 bounded scan encountered certificate-chain
-verification failures for all three sources; the run was retained as a genuine failed observation,
-was not retried, and preserved every prior opportunity as `SOURCE_UNAVAILABLE`. A later scan may
-use an already-installed trusted CA bundle through `SSL_CERT_FILE` after explicit authorization.
+## TLS troubleshooting
+
+The project uses Python `urllib`, not Requests. The default transport creates an `SSLContext` from
+the project dependency `certifi`, with `CERT_REQUIRED` and hostname validation enabled. An explicit
+`SSL_CERT_FILE` overrides certifi only when the operator needs an organization-approved CA bundle,
+such as for an authorized HTTPS-inspecting proxy. `REQUESTS_CA_BUNDLE` does not configure urllib.
+
+Useful diagnostics must compare the same small endpoint:
+
+```bash
+curl -o /dev/null -w '%{http_code} %{ssl_verify_result}\n' https://www.cosyne.org/robots.txt
+python -c 'import ssl; print(ssl.get_default_verify_paths())'
+python -c 'from research_radar.collectors.http import HttpClient; print(HttpClient(max_attempts=1).get("https://www.cosyne.org/robots.txt", accept="text/plain").status)'
+```
+
+On this Mac, the Python.org 3.11 default path
+`/Library/Frameworks/Python.framework/Versions/3.11/etc/openssl/cert.pem` was absent, so its default
+context loaded zero CA certificates. macOS curl succeeded through SecureTransport, and the same
+Python request succeeded with the installed certifi bundle. That differential result identified a
+missing Python CA path rather than an endpoint failure or visible proxy configuration. TLS
+verification was never disabled and no system trust store was modified.
+
+After repair, the ResearchRadar client reached small HTTPS endpoints for all three sources with
+certificate and hostname checks enabled. In the bounded retry, Anthropic and COSYNE succeeded;
+UCL completed TLS but returned HTTP 403 at the application layer and remained `BLOCKED` without a
+bypass attempt.

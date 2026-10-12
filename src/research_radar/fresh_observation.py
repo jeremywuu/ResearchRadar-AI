@@ -245,7 +245,16 @@ def reconcile_fresh_observations(
                 else "record was outside or absent from this bounded successful observation"
             )
             reconciled.append(prior)
-            changes.append(_change(prior, category, status, reason=reason))
+            changes.append(
+                _change(
+                    prior,
+                    category,
+                    status,
+                    reason=reason,
+                    previous=prior,
+                    current_observed=False,
+                )
+            )
 
         fresh_payload["records"] = reconciled
         fresh_payload["summary"] = {
@@ -492,6 +501,7 @@ def _change(
     changed_fields: tuple[FieldChange, ...] = (),
     previous: dict[str, Any] | None = None,
     event_kind: str | None = None,
+    current_observed: bool = True,
 ) -> OpportunityObservationChange:
     opportunity = _opportunity(record)
     prior = _opportunity(previous) if previous is not None else {}
@@ -524,7 +534,7 @@ def _change(
         changed_fields=changed_fields,
         official_url=opportunity.get("source_url") or opportunity.get("official_source_url"),
         previous_observed_at=prior.get("last_seen_at"),
-        current_observed_at=opportunity.get("last_seen_at"),
+        current_observed_at=(opportunity.get("last_seen_at") if current_observed else None),
         source_id=opportunity.get("adapter_source_id"),
         reason=reason,
         event_id=event_id,

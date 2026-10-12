@@ -80,6 +80,11 @@ HTML extraction for UCL Gatsby and COSYNE. HTTP is GET-only, uses a descriptive 
 timeouts, bounded retries, robots checks for HTML, and injected transports for offline tests.
 No HTML or JSON content is executed or treated as agent instructions.
 
+The default urllib transport constructs a verified TLS context from the reproducible certifi
+dependency because Python.org installations may have no linked default CA file. Certificate and
+hostname verification remain mandatory. `SSL_CERT_FILE` is the sole explicit override for an
+operator-provided, organization-approved CA bundle; the client never disables validation.
+
 Storage is separated from processing. `JsonOutputStore` handles local
 snapshots, while the `SheetsAdapter` interface defines worksheet reads, planned writes, and
 append-only logs. `InMemorySheetsAdapter` supplies the offline implementation.

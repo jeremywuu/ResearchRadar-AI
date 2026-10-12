@@ -190,6 +190,8 @@ def test_candidate_cap_missing_job_is_preserved_as_not_observed(tmp_path: Path) 
 
     change = analysis.by_record_id["job_1"]
     assert change.status is FreshObservationStatus.NOT_OBSERVED
+    assert change.previous_observed_at == OLD.isoformat()
+    assert change.current_observed_at is None
     saved = json.loads((live / "jobs.json").read_text())["records"][0]
     assert saved["feedback"] == feedback
     assert saved["opportunity"]["last_seen_at"] == OLD.isoformat()
@@ -205,6 +207,8 @@ def test_unavailable_source_preserves_record_and_status(tmp_path: Path, health: 
     analysis = reconcile_fresh_observations(previous, fresh, live, analyzed_at=NEW)
 
     assert analysis.by_record_id["job_1"].status is FreshObservationStatus.SOURCE_UNAVAILABLE
+    assert analysis.by_record_id["job_1"].previous_observed_at == OLD.isoformat()
+    assert analysis.by_record_id["job_1"].current_observed_at is None
     saved = json.loads((live / "jobs.json").read_text())["records"][0]["opportunity"]
     assert saved["opportunity_status"] == "CONFIRMED_OPEN"
 

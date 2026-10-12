@@ -600,6 +600,32 @@ def test_incremental_cached_preview_has_stable_fingerprint_and_no_actions(tmp_pa
     assert first.artifact_path.exists()
 
 
+def test_incremental_insert_plan_fingerprint_excludes_generation_time(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+    adapter = PilotMemoryAdapter()
+
+    first = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=adapter,
+    )
+    second = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW + timedelta(hours=1),
+        reference_date=date(2026, 10, 12),
+        adapter=adapter,
+    )
+
+    assert any(plan.insert_count for plan in first.preview.workbook.plans.values())
+    assert first.plan_fingerprint == second.plan_fingerprint
+
+
 def test_incremental_fingerprint_changes_with_fresh_source_observation(tmp_path: Path) -> None:
     live_dir = tmp_path / "live"
     _write_live_snapshots(live_dir)

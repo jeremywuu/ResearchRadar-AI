@@ -590,7 +590,10 @@ def _incremental_plan_payload(preview: LiveSheetsPreview) -> dict[str, Any]:
                 "unchanged_record_ids": sorted(plan.unchanged_record_ids),
                 "invalid": [issue.message for issue in plan.invalid_records],
                 "conflicts": [issue.message for issue in plan.conflicts],
-                "change_log_rows": plan.change_log_rows,
+                "change_log_rows": [
+                    {key: value for key, value in row.items() if key not in {"Run_ID", "Timestamp"}}
+                    for row in plan.change_log_rows
+                ],
             }
             for plan in sorted(plans, key=lambda item: item.sheet_name)
         },

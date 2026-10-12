@@ -228,7 +228,7 @@ Acceptance criteria:
 
 ## Milestone 4D.1 — Fresh observation and real-world change detection
 
-Status: complete with source-availability limitation. No Google Sheets apply is authorized.
+Status: complete after TLS repair and one bounded retry. No Google Sheets apply is authorized.
 
 - Archive the prior verified live snapshot before any source retrieval.
 - Perform one bounded read-only collection through each of the three existing official adapters.
@@ -253,13 +253,16 @@ Completion evidence:
 
 - The prior 27-record snapshot was archived before the sole bounded collection attempt; the raw
   failed observation and comparison artifact were stored separately under ignored local data.
-- All three HTTPS requests failed certificate-chain verification. TLS verification was not
-  disabled and no source was retried; all 27 historical records were conservatively classified
-  `SOURCE_UNAVAILABLE`, with zero closures or fabricated observations.
-- The reconciled job, PhD, and event record arrays are byte-for-byte equivalent after canonical
-  JSON sorting to the archived arrays, so no source timestamp, fact, score, or feedback advanced.
-- The authenticated LIVE PILOT plan reports zero inserts, updates, invalid records, and conflicts;
-  all 15 synchronized opportunities and 38 watchlist rows are unchanged.
+- TLS diagnosis found the Python.org 3.11 default CA file missing and its default context empty.
+  The verified urllib transport now uses the declared certifi bundle while preserving certificate,
+  hostname, timeout, and retry checks.
+- One bounded retry observed 646 Anthropic board entries, matched 71 titles, requested 25 details,
+  and accepted 25 jobs. COSYNE succeeded with one event. UCL completed TLS but returned HTTP 403
+  and remained conservatively `BLOCKED`.
+- Reconciliation found five new jobs, 21 observation-only refreshes, five bounded-cap omissions,
+  one unavailable PhD source, zero material content changes, and zero confirmed closures.
+- The authenticated LIVE PILOT plan proposes five job inserts, eleven job observation updates, and
+  one event observation update, with zero invalid records or conflicts. No operation was applied.
 - Canonical feedback remains linked to `job_fd5e30f801bee750` as `Interested`, Saved true, Hidden
   false, with notes preserved and 1,998 template rows ignored.
 - Source health and retrieval evidence now participate in the plan fingerprint even when no cell

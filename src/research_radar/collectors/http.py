@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import os
+import ssl
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from email.message import Message
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+import certifi
 
 USER_AGENT = "ResearchRadarAI/0.1 (+personal academic opportunity monitor; read-only)"
 
@@ -33,10 +37,22 @@ class HttpRetrievalError(RuntimeError):
 Transport = Callable[[str, dict[str, str], float], HttpResponse]
 
 
+def _verified_ssl_context() -> ssl.SSLContext:
+    """Build a verified context from an explicit override or the packaged Mozilla CA set."""
+
+    ca_file = os.environ.get("SSL_CERT_FILE") or certifi.where()
+    return ssl.create_default_context(cafile=ca_file)
+
+
 def _default_transport(url: str, headers: dict[str, str], timeout: float) -> HttpResponse:
     request = Request(url, headers=headers, method="GET")
     try:
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - validated official URLs
+        context = _verified_ssl_context()
+        with urlopen(  # noqa: S310 - validated official URLs
+            request,
+            timeout=timeout,
+            context=context,
+        ) as response:
             raw_headers: Message = response.headers
             return HttpResponse(
                 url=response.geturl(),
@@ -46,7 +62,7 @@ def _default_transport(url: str, headers: dict[str, str], timeout: float) -> Htt
             )
     except HTTPError as exc:
         raise HttpRetrievalError(f"HTTP {exc.code} for {url}", status=exc.code) from exc
-    except (URLError, TimeoutError) as exc:
+    except (URLError, TimeoutError, OSError) as exc:
         reason = exc.reason if isinstance(exc, URLError) else exc
         raise HttpRetrievalError(f"network error for {url}: {reason}") from exc
 
