@@ -200,6 +200,55 @@ SHEET_SCHEMAS = {
     )
 }
 
+MEANINGFUL_SOURCE_HEADERS = {
+    "Industry_Jobs": frozenset(
+        {
+            "Job_Title",
+            "Company",
+            "Location",
+            "Country",
+            "Research_Domain",
+            "Research_Orientation",
+            "Education_Requirement",
+            "Working_Language",
+            "Required_Skills",
+            "Original_Salary",
+            "Salary_Currency",
+            "Salary_Disclosure_Status",
+            "Source_URL",
+            "Opportunity_Status",
+        }
+    ),
+    "PhD_Opportunities": frozenset(
+        {
+            "University",
+            "Program_or_Position",
+            "Research_Area",
+            "PI_Supervisor",
+            "Country",
+            "Admission_Cycle",
+            "Recruitment_Status",
+            "Funding_Status",
+            "Application_Deadline",
+            "Official_URL",
+        }
+    ),
+    "Events": frozenset(
+        {
+            "Event_Name",
+            "Event_Type",
+            "Edition_Year",
+            "Country",
+            "City",
+            "Start_Date",
+            "End_Date",
+            "Submission_Deadline",
+            "Registration_Deadline",
+            "Official_URL",
+        }
+    ),
+}
+
 
 @dataclass
 class WorksheetData:
@@ -268,6 +317,7 @@ class FeedbackLoadResult:
     feedback_by_id: dict[str, UserFeedback] = field(default_factory=dict)
     invalid_records: list[SyncIssue] = field(default_factory=list)
     conflicts: list[SyncIssue] = field(default_factory=list)
+    template_rows_ignored: int = 0
 
 
 @dataclass
@@ -282,6 +332,12 @@ def _validate_headers(schema: SheetSchema, worksheet: WorksheetData) -> None:
         raise SheetSchemaError(
             f"{schema.name} headers do not match the expected schema; refusing to plan writes"
         )
+
+
+def _comparison_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return " ".join(value.split())
+    return value
 
 
 def _event_row(
@@ -382,7 +438,7 @@ def plan_sheet_sync(
         for header in schema.agent_managed_headers:
             if header == "First_Seen":
                 continue
-            if row[header] != existing.get(header, ""):
+            if _comparison_value(row[header]) != _comparison_value(existing.get(header, "")):
                 changed[header] = row[header]
         if not changed:
             plan.unchanged_record_ids.append(record_id)
@@ -390,7 +446,7 @@ def plan_sheet_sync(
         expected_values = {header: existing.get(header, "") for header in changed}
         plan.updates.append(UpdateOperation(row_number, record_id, changed, expected_values))
         for header, value in changed.items():
-            if header == "Last_Seen":
+            if header not in MEANINGFUL_SOURCE_HEADERS.get(schema.name, frozenset()):
                 continue
             change_type = "UPDATED_OPPORTUNITY"
             if header in {
@@ -674,6 +730,7 @@ def load_feedback(adapter: SheetsAdapter) -> FeedbackLoadResult:
     seen: set[str] = set()
     for row_number, row in enumerate(worksheet.rows, start=2):
         if is_blank_feedback_template_row(row):
+            result.template_rows_ignored += 1
             continue
         record_id = row.get("Record_ID")
         if not isinstance(record_id, str) or not record_id.strip():
@@ -687,8 +744,13 @@ def load_feedback(adapter: SheetsAdapter) -> FeedbackLoadResult:
             continue
         seen.add(record_id)
         try:
-            updated_at = datetime.fromisoformat(str(row.get("Updated_At", "")))
-            if updated_at.tzinfo is None:
+            raw_updated_at = row.get("Updated_At")
+            updated_at = (
+                datetime.fromisoformat(str(raw_updated_at))
+                if raw_updated_at not in (None, "")
+                else None
+            )
+            if updated_at is not None and updated_at.tzinfo is None:
                 raise ValueError("Updated_At must include a timezone")
             result.feedback_by_id[record_id] = UserFeedback(
                 opportunity_id=record_id,

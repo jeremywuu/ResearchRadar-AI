@@ -137,37 +137,19 @@ def test_cli_live_sheets_preview_is_offline_and_never_writes(
     assert "no writes performed" in output
 
 
-def test_cli_live_apply_uses_narrow_initial_sync_path(
+def test_cli_incremental_live_apply_remains_disabled_before_adapter_access(
     monkeypatch: pytest.MonkeyPatch, capsys: object
 ) -> None:
-    adapter = object()
-    preview = SimpleNamespace(
-        workbook=SimpleNamespace(
-            plans={
-                "jobs": SheetSyncPlan(sheet_name="Industry_Jobs"),
-                "phd": SheetSyncPlan(sheet_name="PhD_Opportunities"),
-                "events": SheetSyncPlan(sheet_name="Events"),
-            }
-        ),
-        watchlist_plan=SheetSyncPlan(sheet_name="Watchlist"),
-    )
-    calls: list[object] = []
-
     monkeypatch.setattr(
         "research_radar.cli._required_live_pilot_adapter",
-        lambda *, for_write: adapter if for_write else pytest.fail("write guard required"),
+        lambda **_: pytest.fail("adapter must not load for a disabled apply"),
     )
-
-    def apply_once(**kwargs: object) -> object:
-        calls.append(kwargs["adapter"])
-        return SimpleNamespace(preview=preview, applied_sheets=("Industry_Jobs", "Run_Logs"))
-
-    monkeypatch.setattr("research_radar.cli.apply_initial_live_pilot_sync", apply_once)
 
     exit_code = main(
         [
             "sheets-sync",
             "--live",
+            "--incremental",
             "--apply",
             "--reference-date",
             "2026-10-12",
@@ -175,10 +157,57 @@ def test_cli_live_apply_uses_narrow_initial_sync_path(
     )
 
     output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert exit_code == 1
+    assert "incremental live apply is disabled" in output
+
+
+def test_cli_incremental_live_dry_run_reports_feedback_and_fingerprint(
+    monkeypatch: pytest.MonkeyPatch, capsys: object, tmp_path: Path
+) -> None:
+    adapter = object()
+    review_path = tmp_path / "review.md"
+    preview = SimpleNamespace(
+        offline=False,
+        workbook=SimpleNamespace(
+            plans={
+                "jobs": SheetSyncPlan(sheet_name="Industry_Jobs", unchanged_record_ids=["job_1"])
+            },
+            failures={},
+        ),
+        watchlist_plan=SheetSyncPlan(sheet_name="Watchlist", unchanged_record_ids=["watch_1"]),
+        provenance=SimpleNamespace(valid_count=1, blocked_count=0),
+        recommendations=SimpleNamespace(counts={}),
+        coverage={},
+        review_report_path=review_path,
+        feedback=SimpleNamespace(
+            feedback_by_id={"job_1": object()},
+            invalid_records=[],
+            conflicts=[],
+            template_rows_ignored=1998,
+        ),
+    )
+    result = SimpleNamespace(
+        preview=preview,
+        plan_fingerprint="abc123",
+        artifact_path=tmp_path / "incremental_plan_abc123.json",
+    )
+    monkeypatch.setattr(
+        "research_radar.cli._required_live_pilot_adapter",
+        lambda **_: adapter,
+    )
+    monkeypatch.setattr(
+        "research_radar.cli.prepare_incremental_live_sync",
+        lambda **_: result,
+    )
+
+    exit_code = main(["sheets-sync", "--live", "--incremental", "--dry-run"])
+
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
     assert exit_code == 0
-    assert calls == [adapter]
-    assert "initial LIVE PILOT synchronization (apply)" in output
-    assert "approved initial synchronization applied once" in output
+    assert "incremental" in output
+    assert "feedback: loaded=1; invalid=0; conflicts=0; template_rows=1998" in output
+    assert "plan fingerprint: abc123" in output
+    assert "no writes performed" in output
 
 
 def test_live_pilot_init_dry_run_uses_only_dedicated_adapter(

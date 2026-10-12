@@ -238,6 +238,27 @@ def test_feedback_load_preserves_independent_user_fields_and_notes() -> None:
     assert adapter.read_worksheet("My_Feedback").rows == [feedback_row]
 
 
+def test_feedback_load_accepts_user_row_without_optional_update_timestamp() -> None:
+    feedback_row = {
+        "Record_ID": "job_feedback",
+        "Preference": "Very Interested",
+        "Saved": True,
+        "Hidden": False,
+        "Personal_Notes": "A personal research note",
+        "Updated_At": "",
+    }
+
+    result = load_feedback(InMemorySheetsAdapter({"My_Feedback": [feedback_row]}))
+
+    feedback = result.feedback_by_id["job_feedback"]
+    assert feedback.preference is PreferenceFeedback.VERY_INTERESTED
+    assert feedback.saved is True
+    assert feedback.hidden is False
+    assert feedback.notes == "A personal research note"
+    assert feedback.updated_at is None
+    assert result.invalid_records == []
+
+
 def test_feedback_load_ignores_1999_blank_checkbox_template_rows() -> None:
     template_row = {
         "Record_ID": "",
@@ -254,6 +275,7 @@ def test_feedback_load_ignores_1999_blank_checkbox_template_rows() -> None:
     assert result.feedback_by_id == {}
     assert result.invalid_records == []
     assert result.conflicts == []
+    assert result.template_rows_ignored == 1999
 
 
 @pytest.mark.parametrize(
@@ -453,6 +475,23 @@ def test_last_seen_only_update_does_not_create_meaningful_change_event() -> None
     assert plan.change_log_rows == []
 
 
+def test_whitespace_only_cell_differences_are_unchanged() -> None:
+    existing = job_row("job_whitespace", title="AI  Research\nScientist")
+    desired = job_row("job_whitespace", title=" AI Research Scientist ")
+
+    plan = plan_sheet_sync(
+        INDUSTRY_JOBS_SCHEMA,
+        [desired],
+        WorksheetData(headers=INDUSTRY_JOBS_SCHEMA.headers, rows=[existing]),
+        run_id="run_whitespace",
+        timestamp=NOW,
+    )
+
+    assert plan.update_count == 0
+    assert plan.unchanged_record_ids == ["job_whitespace"]
+    assert plan.change_log_rows == []
+
+
 def test_material_change_logs_only_material_fields_when_last_seen_also_advances() -> None:
     existing = job_row("job_material", title="Old title")
     desired = job_row("job_material", title="New title")
@@ -467,6 +506,28 @@ def test_material_change_logs_only_material_fields_when_last_seen_also_advances(
     )
 
     assert {row["Field_Name"] for row in plan.change_log_rows} == {"Job_Title"}
+
+
+def test_rule_based_score_update_is_not_logged_as_source_content_change() -> None:
+    existing = job_row("job_score")
+    desired = deepcopy(existing)
+    desired["Research_Relevance"] = 95.0
+    desired["Overall_Priority_Score"] = 92.0
+
+    plan = plan_sheet_sync(
+        INDUSTRY_JOBS_SCHEMA,
+        [desired],
+        WorksheetData(headers=INDUSTRY_JOBS_SCHEMA.headers, rows=[existing]),
+        run_id="run_score",
+        timestamp=NOW,
+    )
+
+    assert plan.update_count == 1
+    assert plan.updates[0].changed_fields == {
+        "Research_Relevance": 95.0,
+        "Overall_Priority_Score": 92.0,
+    }
+    assert plan.change_log_rows == []
 
 
 def test_run_log_counts_validation_errors_but_not_intentional_exclusions() -> None:

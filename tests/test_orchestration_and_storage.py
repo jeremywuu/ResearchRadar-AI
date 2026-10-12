@@ -120,6 +120,23 @@ def test_content_updated_at_advances_only_for_material_content_changes(tmp_path:
     assert opportunity["content_updated_at"] == later_at.isoformat()
 
 
+def test_content_updated_at_ignores_source_whitespace_only_differences(tmp_path: Path) -> None:
+    store = JsonOutputStore(tmp_path)
+    first = run_jobs_pipeline([job_record()], config_dir=PROJECT_ROOT / "config", observed_at=NOW)
+    store.write(first)
+    whitespace_raw = job_record() | {"title": "  AI   Research\nScientist  "}
+    later_at = NOW + timedelta(days=7)
+    repeated = run_jobs_pipeline(
+        [whitespace_raw], config_dir=PROJECT_ROOT / "config", observed_at=later_at
+    )
+    path = store.write(repeated)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    opportunity = payload["records"][0]["opportunity"]
+    assert opportunity["last_seen_at"] == later_at.isoformat()
+    assert opportunity["content_updated_at"] == NOW.isoformat()
+
+
 def test_storage_outputs_valid_structured_json_for_each_category(tmp_path: Path) -> None:
     from research_radar.demo import run_demo
 

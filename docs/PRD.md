@@ -197,6 +197,22 @@ update, conflict, invalid record, provenance failure, unapproved recommendation,
 or second invocation is rejected before writing. This does not enable general live or production
 synchronization.
 
+## Milestone 4C.4 incremental monitoring boundary
+
+Incremental live-pilot planning rereads every worksheet and joins records only by stable
+`Record_ID`. It reports inserts, meaningful updates, unchanged records, and conflicts without
+deleting records that disappear from one scan. Cached snapshots preserve their original source
+observation timestamps and cannot advance `Last_Seen`.
+
+`My_Feedback` remains authoritative. Preference, saved, hidden, notes, and an optional user-entered
+update timestamp are loaded without automated writes. Recommendation changes may alter proposed
+visibility or agent-managed score cells, but they are not official source-content changes and do
+not close or delete a previously synchronized opportunity.
+
+Every incremental dry-run receives a content-derived plan fingerprint and an ignored local
+recovery artifact. Live incremental apply remains disabled until the user separately approves the
+exact fingerprint and deliberate confirmation phrase. Production synchronization remains disabled.
+
 ## Future capabilities
 
 - PhD career intelligence

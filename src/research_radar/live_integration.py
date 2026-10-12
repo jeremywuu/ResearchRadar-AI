@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -23,12 +24,14 @@ from research_radar.models import (
     PhDOpportunity,
     PipelineReport,
     ProcessedOpportunity,
+    SourceHealth,
     SourceVerificationStatus,
     UserFeedback,
 )
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline, run_phd_pipeline
 from research_radar.storage.sheets import (
     WATCHLIST_SCHEMA,
+    FeedbackLoadResult,
     InMemorySheetsAdapter,
     SheetsAdapter,
     SheetSyncPlan,
@@ -64,6 +67,21 @@ class RecommendationClassification(StrEnum):
 
 
 LIVE_PILOT_WORKBOOK_TITLE = "ResearchRadar AI — LIVE PILOT"
+INCREMENTAL_APPLY_CONFIRMATION = "CONFIRM_LIVE_PILOT_INCREMENTAL"
+
+
+class ObservationState(StrEnum):
+    CONFIRMED_ACTIVE = "CONFIRMED_ACTIVE"
+    CONFIRMED_CLOSED = "CONFIRMED_CLOSED"
+    NOT_OBSERVED = "NOT_OBSERVED_IN_LATEST_SUCCESSFUL_SCAN"
+    SOURCE_UNAVAILABLE = "SOURCE_TEMPORARILY_UNAVAILABLE"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class ObservationDecision:
+    state: ObservationState
+    may_change_opportunity_status: bool
 
 
 @dataclass(frozen=True)
@@ -162,6 +180,7 @@ class LiveSheetsPreview:
     review_report_path: Path
     offline: bool
     target_environment: TargetEnvironment
+    feedback: FeedbackLoadResult
     sheet_synced_at: datetime | None = None
 
 
@@ -169,6 +188,27 @@ class LiveSheetsPreview:
 class InitialLiveSyncResult:
     preview: LiveSheetsPreview
     applied_sheets: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class IncrementalLiveSyncPlan:
+    preview: LiveSheetsPreview
+    plan_fingerprint: str
+    artifact_path: Path
+
+
+@dataclass(frozen=True)
+class RecoverySheetPlan:
+    completed_record_ids: tuple[str, ...]
+    pending_record_ids: tuple[str, ...]
+    conflicts: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class IncrementalRecoveryPlan:
+    sheets: dict[str, RecoverySheetPlan]
+    missing_change_event_ids: tuple[str, ...]
+    conflicts: tuple[str, ...]
 
 
 def validate_target_compatibility(
@@ -295,6 +335,21 @@ def prepare_live_sheets_preview(
         reference_date=reference_date,
         feedback_by_id=feedback.feedback_by_id,
     )
+    known_feedback_ids = {
+        processed.opportunity.opportunity_id
+        for report in execution.pipelines.values()
+        for processed in report.records
+    }
+    for sheet_name in ("Industry_Jobs", "PhD_Opportunities", "Events"):
+        known_feedback_ids.update(
+            str(row.get("Record_ID"))
+            for row in adapter.read_worksheet(sheet_name).rows
+            if row.get("Record_ID")
+        )
+    unlinked_feedback_ids = set(feedback.feedback_by_id) - known_feedback_ids
+    if unlinked_feedback_ids:
+        joined = ", ".join(sorted(unlinked_feedback_ids))
+        raise LiveDataError(f"feedback Record_ID values are not linked to known records: {joined}")
     provenance = audit_provenance(execution)
     preferences = load_career_preferences(project_root / "config" / "career_preferences.yaml")
     recommendations = classify_recommendations(
@@ -343,7 +398,217 @@ def prepare_live_sheets_preview(
         review_report_path=review_path,
         offline=offline,
         target_environment=environment,
+        feedback=feedback,
     )
+
+
+def prepare_incremental_live_sync(
+    *,
+    project_root: Path,
+    live_data_dir: Path,
+    review_dir: Path,
+    generated_at: datetime,
+    reference_date: date,
+    adapter: SheetsAdapter,
+) -> IncrementalLiveSyncPlan:
+    """Build a repeatable, read-only live-pilot plan and persist its recovery artifact."""
+
+    preview = prepare_live_sheets_preview(
+        project_root=project_root,
+        live_data_dir=live_data_dir,
+        review_dir=review_dir,
+        generated_at=generated_at,
+        reference_date=reference_date,
+        adapter=adapter,
+        target_environment=TargetEnvironment.LIVE_PILOT,
+    )
+    payload = _incremental_plan_payload(preview)
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    fingerprint = sha256(canonical.encode("utf-8")).hexdigest()
+    review_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = review_dir / f"incremental_plan_{fingerprint}.json"
+    artifact = {
+        "version": 1,
+        "plan_fingerprint": fingerprint,
+        "generated_at": generated_at.isoformat(),
+        "target_environment": preview.target_environment.value,
+        "plan": payload,
+    }
+    artifact_path.write_text(
+        json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return IncrementalLiveSyncPlan(
+        preview=preview,
+        plan_fingerprint=fingerprint,
+        artifact_path=artifact_path,
+    )
+
+
+def validate_incremental_apply_authorization(
+    plan: IncrementalLiveSyncPlan,
+    *,
+    approved_fingerprint: str,
+    confirmation: str,
+) -> None:
+    """Validate the auditable approval inputs required by a future incremental apply."""
+
+    if approved_fingerprint != plan.plan_fingerprint:
+        raise LiveDataError("approved incremental plan fingerprint does not match the current plan")
+    if confirmation != INCREMENTAL_APPLY_CONFIRMATION:
+        raise LiveDataError("explicit incremental apply confirmation is required")
+    plans = (*plan.preview.workbook.plans.values(), plan.preview.watchlist_plan)
+    if plan.preview.workbook.failures:
+        raise LiveDataError("incremental plan contains pipeline synchronization failures")
+    if any(item.invalid_records or item.conflicts for item in plans):
+        raise LiveDataError("incremental plan contains invalid records or unresolved conflicts")
+    if plan.preview.provenance.blocked_count:
+        raise LiveDataError("incremental plan contains provenance-blocked records")
+
+
+def resolve_observation_state(
+    *,
+    source_health: SourceHealth,
+    observed: bool,
+    explicit_status: str | None,
+) -> ObservationDecision:
+    """Keep source availability separate from source-stated opportunity status."""
+
+    if (
+        source_health
+        in {
+            SourceHealth.FAILED,
+            SourceHealth.BLOCKED,
+            SourceHealth.UNSUPPORTED,
+            SourceHealth.PARTIAL,
+        }
+        and not observed
+    ):
+        return ObservationDecision(ObservationState.SOURCE_UNAVAILABLE, False)
+    if not observed and source_health in {SourceHealth.SUCCESS, SourceHealth.SUCCESS_NO_MATCHES}:
+        return ObservationDecision(ObservationState.NOT_OBSERVED, False)
+    normalized_status = (explicit_status or "").strip().upper()
+    if observed and normalized_status == "CLOSED":
+        return ObservationDecision(ObservationState.CONFIRMED_CLOSED, True)
+    if observed and normalized_status in {"CONFIRMED_OPEN", "CONFIRMED_UPCOMING"}:
+        return ObservationDecision(ObservationState.CONFIRMED_ACTIVE, True)
+    return ObservationDecision(ObservationState.UNKNOWN, False)
+
+
+def reconcile_incremental_plan(
+    original: IncrementalLiveSyncPlan,
+    adapter: SheetsAdapter,
+) -> IncrementalRecoveryPlan:
+    """Reconcile a partially applied plan by Record_ID without repeating completed writes."""
+
+    sheets: dict[str, RecoverySheetPlan] = {}
+    global_conflicts: list[str] = []
+    plans = {
+        plan.sheet_name: plan
+        for plan in (*original.preview.workbook.plans.values(), original.preview.watchlist_plan)
+    }
+    for sheet_name, plan in plans.items():
+        worksheet = adapter.read_worksheet(sheet_name)
+        rows_by_id: dict[str, dict[str, Any]] = {}
+        sheet_conflicts = [issue.message for issue in (*plan.invalid_records, *plan.conflicts)]
+        for row in worksheet.rows:
+            record_id = row.get("Record_ID")
+            if not isinstance(record_id, str) or not record_id:
+                sheet_conflicts.append("current worksheet row has no Record_ID")
+                continue
+            if record_id in rows_by_id:
+                sheet_conflicts.append(f"duplicate Record_ID in current worksheet: {record_id}")
+                continue
+            rows_by_id[record_id] = row
+
+        completed: list[str] = []
+        pending: list[str] = []
+        for operation in plan.inserts:
+            record_id = str(operation.row["Record_ID"])
+            current = rows_by_id.get(record_id)
+            if current is None:
+                pending.append(record_id)
+            elif _rows_match(operation.row, current):
+                completed.append(record_id)
+            else:
+                sheet_conflicts.append(f"inserted Record_ID has unexpected values: {record_id}")
+        for operation in plan.updates:
+            current = rows_by_id.get(operation.record_id)
+            if current is None:
+                sheet_conflicts.append(f"updated Record_ID is missing: {operation.record_id}")
+            elif _fields_match(current, operation.changed_fields):
+                completed.append(operation.record_id)
+            elif _fields_match(current, operation.expected_values):
+                pending.append(operation.record_id)
+            else:
+                sheet_conflicts.append(
+                    f"updated Record_ID has concurrent values: {operation.record_id}"
+                )
+        for record_id in plan.unchanged_record_ids:
+            if record_id in rows_by_id:
+                completed.append(record_id)
+            else:
+                sheet_conflicts.append(f"previously unchanged Record_ID is missing: {record_id}")
+        sheets[sheet_name] = RecoverySheetPlan(
+            completed_record_ids=tuple(sorted(set(completed))),
+            pending_record_ids=tuple(sorted(set(pending))),
+            conflicts=tuple(sheet_conflicts),
+        )
+        global_conflicts.extend(f"{sheet_name}: {message}" for message in sheet_conflicts)
+
+    change_log = adapter.read_worksheet("Change_Log")
+    existing_event_ids = {
+        str(row.get("Event_ID")) for row in change_log.rows if row.get("Event_ID")
+    }
+    expected_event_ids = {
+        str(row["Event_ID"]) for plan in plans.values() for row in plan.change_log_rows
+    }
+    return IncrementalRecoveryPlan(
+        sheets=sheets,
+        missing_change_event_ids=tuple(sorted(expected_event_ids - existing_event_ids)),
+        conflicts=tuple(global_conflicts),
+    )
+
+
+def _incremental_plan_payload(preview: LiveSheetsPreview) -> dict[str, Any]:
+    plans = (*preview.workbook.plans.values(), preview.watchlist_plan)
+    return {
+        "sheets": {
+            plan.sheet_name: {
+                "inserts": [operation.row for operation in plan.inserts],
+                "updates": [
+                    {
+                        "record_id": operation.record_id,
+                        "changed_fields": operation.changed_fields,
+                        "expected_values": operation.expected_values,
+                    }
+                    for operation in plan.updates
+                ],
+                "unchanged_record_ids": sorted(plan.unchanged_record_ids),
+                "invalid": [issue.message for issue in plan.invalid_records],
+                "conflicts": [issue.message for issue in plan.conflicts],
+                "change_log_rows": plan.change_log_rows,
+            }
+            for plan in sorted(plans, key=lambda item: item.sheet_name)
+        },
+        "pipeline_failures": preview.workbook.failures,
+        "provenance_blocked": preview.provenance.blocked_count,
+    }
+
+
+def _comparison_value(value: Any) -> Any:
+    return " ".join(value.split()) if isinstance(value, str) else value
+
+
+def _fields_match(current: dict[str, Any], expected: dict[str, Any]) -> bool:
+    return all(
+        _comparison_value(current.get(field, "")) == _comparison_value(value)
+        for field, value in expected.items()
+    )
+
+
+def _rows_match(expected: dict[str, Any], current: dict[str, Any]) -> bool:
+    return _fields_match(current, expected)
 
 
 def apply_initial_live_pilot_sync(

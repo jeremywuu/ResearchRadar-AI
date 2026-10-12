@@ -88,13 +88,37 @@ class JsonOutputStore:
     @staticmethod
     def _material_content(opportunity: dict[str, Any]) -> dict[str, Any]:
         ignored = {
+            "opportunity_id",
+            "identity_key",
             "first_seen_at",
             "last_seen_at",
             "retrieved_at",
             "source_retrieved_at",
             "content_updated_at",
+            "original_values",
+            "classification",
+            "english_compatibility",
+            "review_flags",
+            "source_verification_status",
         }
-        return {key: value for key, value in opportunity.items() if key not in ignored}
+        return {
+            key: JsonOutputStore._canonical_content_value(value)
+            for key, value in opportunity.items()
+            if key not in ignored
+        }
+
+    @staticmethod
+    def _canonical_content_value(value: Any) -> Any:
+        if isinstance(value, str):
+            return " ".join(value.split())
+        if isinstance(value, dict):
+            return {
+                key: JsonOutputStore._canonical_content_value(item)
+                for key, item in sorted(value.items())
+            }
+        if isinstance(value, list):
+            return [JsonOutputStore._canonical_content_value(item) for item in value]
+        return value
 
     @staticmethod
     def _existing_records(path: Path) -> dict[str, dict[str, Any]]:

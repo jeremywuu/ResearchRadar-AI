@@ -93,6 +93,16 @@ guarded by the immutable approved insert and recommendation counts. Because the 
 those records, rerunning that apply command fails validation before writing; later synchronization
 requires a new scoped authorization and implementation change.
 
+For repeatable read-only planning against the existing pilot:
+
+```bash
+research-radar sheets-sync --live --incremental --dry-run --reference-date 2026-10-12
+```
+
+This prints an auditable plan fingerprint, canonical feedback counts, and the location of an
+ignored recovery artifact. Incremental live `--apply` remains disabled pending separate approval
+of a freshly rebuilt fingerprint and deliberate confirmation.
+
 Run tests:
 
 ```bash

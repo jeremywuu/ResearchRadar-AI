@@ -200,6 +200,33 @@ verified, provenance-valid, and `HIGH_PRIORITY` or `RELEVANT`. Once rows exist, 
 unchanged records instead of the approved inserts, so the one-time path fails before writing.
 General recurring live and production writes remain disabled.
 
+## Incremental live-pilot planning
+
+`prepare_incremental_live_sync` is the incremental module interface. It reuses the cached-live
+loader, provenance audit, recommendation filter, Sheets planner, and adapter seam, then returns a
+dry-run plan with a SHA-256 fingerprint. The fingerprint covers inserts, targeted updates,
+unchanged IDs, conflicts, invalid records, deterministic change events, and pipeline failures; it
+does not include the wall-clock plan-generation time. The same cached data and worksheet state
+therefore produce the same approval identity.
+
+The ignored JSON plan artifact retains enough expected and desired values to audit a later partial
+failure. `reconcile_incremental_plan` rereads current rows by `Record_ID`, separates completed and
+pending actions, flags concurrent values, and identifies missing deterministic Change_Log event
+IDs. It never retries writes. A future apply must rebuild the plan, match the separately approved
+fingerprint, require the exact deliberate confirmation phrase, revalidate target identity and
+provenance, and refuse unresolved conflicts.
+
+Meaningful source-change events are field-aware. Titles, locations, qualifications, salary,
+deadlines, recruitment/funding status, research fields, and conference dates are meaningful.
+`Last_Seen`, score changes, career-stage/ranking changes, Sheet timestamps, feedback, serialization,
+and whitespace-only differences may update their owned fields but do not create source-content
+Change_Log events. `First_Seen` remains immutable.
+
+Source observation state remains separate from opportunity status. A successful scan that omits a
+record yields `NOT_OBSERVED_IN_LATEST_SUCCESSFUL_SCAN`; a failed, blocked, unsupported, or partial
+source yields `SOURCE_TEMPORARILY_UNAVAILABLE`. Neither state may close an opportunity. Only an
+observed, explicit source status can confirm active or closed state.
+
 Change event IDs are deterministic over category, record, change type, field, old value, and new
 value. Retrying the same plan therefore does not duplicate `Change_Log` rows. Run log IDs combine
 run ID and category. Category planning/apply failures are isolated from sibling categories.

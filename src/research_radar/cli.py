@@ -13,8 +13,8 @@ from research_radar.live_integration import (
     DataMode,
     LiveDataError,
     TargetEnvironment,
-    apply_initial_live_pilot_sync,
     configured_live_pilot_adapter,
+    prepare_incremental_live_sync,
     prepare_live_sheets_preview,
     validate_configured_data_mode,
     validate_live_pilot_identity,
@@ -72,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
     sheets_sync.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
     sheets_sync.add_argument("--live-data-dir", type=Path, default=Path("data/live"))
     sheets_sync.add_argument("--review-dir", type=Path, default=Path("data/review"))
+    sheets_sync.add_argument(
+        "--incremental",
+        action="store_true",
+        help="build a repeatable live-pilot plan with an auditable fingerprint",
+    )
 
     sheets_status = subparsers.add_parser(
         "sheets-status", help="check Google Sheets connectivity and schema without writes"
@@ -240,10 +245,21 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "sheets-sync":
             observed_at = datetime.now(UTC)
+            if args.incremental and not args.live:
+                print("Incremental synchronization is available only with --live")
+                return 1
             if args.live:
                 if args.apply:
-                    pilot_adapter = _required_live_pilot_adapter(for_write=True)
-                    result = apply_initial_live_pilot_sync(
+                    mode = "incremental live" if args.incremental else "initial live"
+                    print(
+                        f"{mode} apply is disabled; review a dry-run plan and obtain "
+                        "separate fingerprint-bound authorization"
+                    )
+                    return 1
+                incremental = None
+                if args.incremental:
+                    pilot_adapter = _required_live_pilot_adapter()
+                    incremental = prepare_incremental_live_sync(
                         project_root=args.project_root,
                         live_data_dir=args.live_data_dir,
                         review_dir=args.review_dir,
@@ -251,30 +267,26 @@ def main(argv: list[str] | None = None) -> int:
                         reference_date=args.reference_date,
                         adapter=pilot_adapter,
                     )
-                    print("Google Sheets initial LIVE PILOT synchronization (apply)")
-                    for category, plan in result.preview.workbook.plans.items():
-                        _print_sync_plan(category, plan)
-                    _print_sync_plan("watchlist", result.preview.watchlist_plan)
-                    print("applied sheets: " + ", ".join(result.applied_sheets))
-                    print("approved initial synchronization applied once")
-                    return 0
-                validate_configured_data_mode(DataMode.LIVE)
-                pilot_adapter = configured_live_pilot_adapter()
-                preview = prepare_live_sheets_preview(
-                    project_root=args.project_root,
-                    live_data_dir=args.live_data_dir,
-                    review_dir=args.review_dir,
-                    generated_at=observed_at,
-                    reference_date=args.reference_date,
-                    adapter=pilot_adapter,
-                    target_environment=TargetEnvironment.LIVE_PILOT,
-                )
+                    preview = incremental.preview
+                else:
+                    validate_configured_data_mode(DataMode.LIVE)
+                    pilot_adapter = configured_live_pilot_adapter()
+                    preview = prepare_live_sheets_preview(
+                        project_root=args.project_root,
+                        live_data_dir=args.live_data_dir,
+                        review_dir=args.review_dir,
+                        generated_at=observed_at,
+                        reference_date=args.reference_date,
+                        adapter=pilot_adapter,
+                        target_environment=TargetEnvironment.LIVE_PILOT,
+                    )
                 target = (
                     "offline simulated empty workbook"
                     if preview.offline
                     else "configured LIVE PILOT workbook"
                 )
-                print(f"Google Sheets live-data preview (dry-run; target={target})")
+                label = "incremental live-data" if incremental else "live-data"
+                print(f"Google Sheets {label} preview (dry-run; target={target})")
                 for category, plan in preview.workbook.plans.items():
                     _print_sync_plan(category, plan)
                 _print_sync_plan("watchlist", preview.watchlist_plan)
@@ -291,6 +303,17 @@ def main(argv: list[str] | None = None) -> int:
                         f"extracted={source.records_extracted}; "
                         f"accepted={source.records_accepted}"
                     )
+                if incremental:
+                    feedback = preview.feedback
+                    print(
+                        "feedback: "
+                        f"loaded={len(feedback.feedback_by_id)}; "
+                        f"invalid={len(feedback.invalid_records)}; "
+                        f"conflicts={len(feedback.conflicts)}; "
+                        f"template_rows={feedback.template_rows_ignored}"
+                    )
+                    print(f"plan fingerprint: {incremental.plan_fingerprint}")
+                    print(f"recovery artifact: {incremental.artifact_path}")
                 print(f"review report: {preview.review_report_path}")
                 print("no writes performed")
                 return (

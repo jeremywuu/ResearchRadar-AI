@@ -315,7 +315,7 @@ class UserFeedback:
     preference: PreferenceFeedback | None
     saved: bool
     hidden: bool
-    updated_at: datetime
+    updated_at: datetime | None
     notes: str | None = None
     feedback_id: str = field(init=False)
 
@@ -323,7 +323,9 @@ class UserFeedback:
         if not self.opportunity_id.strip():
             raise ValueError("opportunity_id must not be blank")
         self.feedback_id = generate_stable_identifier(
-            "feedback", self.opportunity_id, self.updated_at.isoformat()
+            "feedback",
+            self.opportunity_id,
+            self.updated_at.isoformat() if self.updated_at else "unknown-updated-at",
         )
 
 

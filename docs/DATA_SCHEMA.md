@@ -169,6 +169,43 @@ notes?
 ```
 
 `saved` does not change relevance. `hidden` never deletes the opportunity or its history.
+`updated_at` is optional because a person may enter feedback directly without adding a timestamp;
+an empty cell remains `None` and no timestamp is fabricated. Empty preformatted checkbox rows with
+false Saved/Hidden values are template rows, not feedback records.
+
+## Incremental plan and observation state
+
+An ignored local incremental-plan artifact contains:
+
+```text
+version
+plan_fingerprint
+generated_at
+target_environment
+sheet inserts
+sheet updates with expected values
+unchanged Record_IDs
+invalid records and conflicts
+deterministic Change_Log rows
+pipeline failures
+```
+
+The fingerprint is calculated from the canonical plan body, excluding `generated_at`. Recovery
+reconciles current worksheet values with the artifact by `Record_ID`; row numbers are never used as
+identity.
+
+Observation state is monitoring metadata distinct from `Opportunity_Status`:
+
+```text
+CONFIRMED_ACTIVE
+CONFIRMED_CLOSED
+NOT_OBSERVED_IN_LATEST_SUCCESSFUL_SCAN
+SOURCE_TEMPORARILY_UNAVAILABLE
+UNKNOWN
+```
+
+The last three states preserve the previous opportunity status. Absence from one scan and source
+failure are never evidence of closure.
 
 ## Processed output
 

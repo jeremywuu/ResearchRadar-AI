@@ -172,3 +172,22 @@ explicit flag. The first data synchronization was separately authorized and comp
 one-time exact-plan guard. Do not rerun `sheets-sync --live --apply`: with the initial rows present,
 the guard rejects the command before writing. Future recurring synchronization requires a new
 scoped authorization; read-only status and dry-run commands remain available.
+
+## Incremental LIVE PILOT dry-run
+
+Incremental planning requires the dedicated pilot configuration and performs no writes:
+
+```bash
+research-radar sheets-sync --live --incremental --dry-run --reference-date 2026-10-12
+```
+
+The output reports per-sheet actions, feedback records, ignored feedback template rows, the review
+report, a local recovery artifact, and a plan fingerprint. `My_Feedback` is read-only during this
+command. A blank feedback `Updated_At` is accepted as unknown. `Record_ID` must be copied exactly
+from an opportunity sheet; a job title is not an identifier and is rejected rather than guessed.
+
+Incremental `--apply` is disabled in Milestone 4C.4. A future separately authorized apply must use
+the freshly rebuilt matching fingerprint, the deliberate confirmation phrase
+`CONFIRM_LIVE_PILOT_INCREMENTAL`, valid provenance, zero unresolved conflicts, the exact LIVE PILOT
+ID/title/environment, and an explicit `--apply`. Never reuse a fingerprint after worksheet or local
+snapshot state changes.

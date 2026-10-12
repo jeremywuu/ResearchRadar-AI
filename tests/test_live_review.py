@@ -8,23 +8,41 @@ from pathlib import Path
 import pytest
 
 from research_radar.live_integration import (
+    INCREMENTAL_APPLY_CONFIRMATION,
     DataMode,
     InitialLiveSyncApproval,
     LiveDataError,
+    ObservationState,
     RecommendationClassification,
     TargetEnvironment,
     apply_initial_live_pilot_sync,
     configured_live_pilot_adapter,
+    prepare_incremental_live_sync,
     prepare_live_sheets_preview,
+    reconcile_incremental_plan,
+    resolve_observation_state,
     validate_configured_data_mode,
+    validate_incremental_apply_authorization,
     validate_target_compatibility,
 )
+from research_radar.models import SourceHealth
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline, run_phd_pipeline
 from research_radar.storage.json_store import JsonOutputStore
 from research_radar.storage.sheets import InMemorySheetsAdapter
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 10, 11, 9, 0, tzinfo=UTC)
+
+
+class PilotMemoryAdapter(InMemorySheetsAdapter):
+    settings = type(
+        "Settings",
+        (),
+        {"environment": "live-pilot", "spreadsheet_id": "pilot-id"},
+    )()
+
+    def get_spreadsheet_title(self) -> str:
+        return "ResearchRadar AI — LIVE PILOT"
 
 
 def _raw_records() -> dict[str, dict[str, object]]:
@@ -537,3 +555,228 @@ def test_initial_live_sync_applies_only_the_exact_approved_plan_once(
     assert len(adapter.read_worksheet("Watchlist").rows) == 38
     assert len(adapter.read_worksheet("Run_Logs").rows) == 3
     assert len(adapter.read_worksheet("Change_Log").rows) == 3
+
+
+def test_incremental_cached_preview_has_stable_fingerprint_and_no_actions(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+    initial = prepare_live_sheets_preview(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+    )
+    adapter = PilotMemoryAdapter(
+        {
+            plan.sheet_name: [operation.row for operation in plan.inserts]
+            for plan in initial.workbook.plans.values()
+        }
+        | {"Watchlist": [operation.row for operation in initial.watchlist_plan.inserts]}
+    )
+
+    first = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW + timedelta(days=1),
+        reference_date=date(2026, 10, 12),
+        adapter=adapter,
+    )
+    second = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW + timedelta(days=2),
+        reference_date=date(2026, 10, 12),
+        adapter=adapter,
+    )
+
+    assert first.plan_fingerprint == second.plan_fingerprint
+    assert all(plan.insert_count == 0 for plan in first.preview.workbook.plans.values())
+    assert all(plan.update_count == 0 for plan in first.preview.workbook.plans.values())
+    assert first.preview.watchlist_plan.insert_count == 0
+    assert first.preview.watchlist_plan.update_count == 0
+    assert first.artifact_path.exists()
+
+
+def test_incremental_feedback_round_trip_preserves_user_owned_fields(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    ids = _write_live_snapshots(live_dir)
+    feedback_row = {
+        "Record_ID": ids["jobs"],
+        "Preference": "Very Interested",
+        "Saved": True,
+        "Hidden": False,
+        "Personal_Notes": "A personal research note",
+        "Updated_At": "",
+    }
+    template = {
+        "Record_ID": "",
+        "Preference": "",
+        "Saved": False,
+        "Hidden": False,
+        "Personal_Notes": "",
+        "Updated_At": "",
+    }
+    adapter = PilotMemoryAdapter({"My_Feedback": [feedback_row, *([template] * 1998)]})
+
+    result = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+        adapter=adapter,
+    )
+
+    feedback = result.preview.feedback.feedback_by_id[ids["jobs"]]
+    assert feedback.preference.value == "VERY_INTERESTED"
+    assert feedback.saved is True
+    assert feedback.hidden is False
+    assert feedback.notes == "A personal research note"
+    assert feedback.updated_at is None
+    assert result.preview.feedback.template_rows_ignored == 1998
+    assert adapter.read_worksheet("My_Feedback").rows[0] == feedback_row
+
+
+def test_incremental_feedback_with_title_instead_of_record_id_is_rejected(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+    feedback_row = {
+        "Record_ID": "Research Scientist",
+        "Preference": "Interested",
+        "Saved": True,
+        "Hidden": False,
+        "Personal_Notes": "Keep for review",
+        "Updated_At": "",
+    }
+    adapter = PilotMemoryAdapter({"My_Feedback": [feedback_row]})
+
+    with pytest.raises(LiveDataError, match="not linked to known records"):
+        prepare_incremental_live_sync(
+            project_root=ROOT,
+            live_data_dir=live_dir,
+            review_dir=tmp_path / "review",
+            generated_at=NOW,
+            reference_date=date(2026, 10, 11),
+            adapter=adapter,
+        )
+
+    assert adapter.read_worksheet("My_Feedback").rows == [feedback_row]
+
+
+def test_partial_insert_recovery_does_not_repeat_completed_record(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+    original = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+        adapter=PilotMemoryAdapter(),
+    )
+    completed_job = original.preview.workbook.plans["jobs"].inserts[0].row
+    partial_adapter = PilotMemoryAdapter({"Industry_Jobs": [completed_job]})
+
+    recovery = reconcile_incremental_plan(original, partial_adapter)
+
+    assert completed_job["Record_ID"] in recovery.sheets["Industry_Jobs"].completed_record_ids
+    assert completed_job["Record_ID"] not in recovery.sheets["Industry_Jobs"].pending_record_ids
+    assert recovery.missing_change_event_ids
+    assert recovery.conflicts == ()
+
+
+def test_incremental_authorization_requires_matching_fingerprint_and_confirmation(
+    tmp_path: Path,
+) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+    plan = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+        adapter=PilotMemoryAdapter(),
+    )
+
+    with pytest.raises(LiveDataError, match="fingerprint"):
+        validate_incremental_apply_authorization(
+            plan,
+            approved_fingerprint="wrong",
+            confirmation=INCREMENTAL_APPLY_CONFIRMATION,
+        )
+    with pytest.raises(LiveDataError, match="confirmation"):
+        validate_incremental_apply_authorization(
+            plan,
+            approved_fingerprint=plan.plan_fingerprint,
+            confirmation="",
+        )
+    validate_incremental_apply_authorization(
+        plan,
+        approved_fingerprint=plan.plan_fingerprint,
+        confirmation=INCREMENTAL_APPLY_CONFIRMATION,
+    )
+
+
+@pytest.mark.parametrize(
+    ("health", "observed", "explicit_status", "expected"),
+    [
+        (SourceHealth.SUCCESS, False, None, ObservationState.NOT_OBSERVED),
+        (SourceHealth.FAILED, False, None, ObservationState.SOURCE_UNAVAILABLE),
+        (SourceHealth.BLOCKED, False, None, ObservationState.SOURCE_UNAVAILABLE),
+        (SourceHealth.SUCCESS, True, "CLOSED", ObservationState.CONFIRMED_CLOSED),
+        (SourceHealth.SUCCESS, True, "CONFIRMED_OPEN", ObservationState.CONFIRMED_ACTIVE),
+    ],
+)
+def test_observation_policy_is_conservative(
+    health: SourceHealth,
+    observed: bool,
+    explicit_status: str | None,
+    expected: ObservationState,
+) -> None:
+    decision = resolve_observation_state(
+        source_health=health,
+        observed=observed,
+        explicit_status=explicit_status,
+    )
+
+    assert decision.state is expected
+    if not observed:
+        assert decision.may_change_opportunity_status is False
+
+
+def test_recommendation_demotion_does_not_delete_existing_sheet_record(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    ids = _write_live_snapshots(live_dir)
+    initial = prepare_live_sheets_preview(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+    )
+    existing_job = initial.workbook.plans["jobs"].inserts[0].row
+    _write_live_snapshots(
+        live_dir,
+        mutate=lambda raws: raws["jobs"].__setitem__("title", "Recruiter, AI Research"),
+    )
+    adapter = PilotMemoryAdapter({"Industry_Jobs": [existing_job]})
+
+    incremental = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW + timedelta(days=1),
+        reference_date=date(2026, 10, 12),
+        adapter=adapter,
+    )
+
+    assert incremental.preview.recommendations.by_record_id[ids["jobs"]].classification is (
+        RecommendationClassification.LOW_PRIORITY
+    )
+    assert incremental.preview.workbook.plans["jobs"].insert_count == 0
+    assert incremental.preview.workbook.plans["jobs"].update_count == 0
+    assert adapter.read_worksheet("Industry_Jobs").rows == [existing_job]

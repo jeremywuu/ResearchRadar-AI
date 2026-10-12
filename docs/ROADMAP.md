@@ -200,6 +200,33 @@ Acceptance evidence:
 - The initial apply path now rejects a second invocation before writing; future recurring live
   synchronization requires a new authorization and design review.
 
+## Milestone 4C.4 — Feedback round-trip and incremental live sync
+
+Status: implementation complete; final LIVE PILOT dry-run awaits correction of one user-entered
+feedback linkage. Incremental apply remains disabled.
+
+- Load canonical user feedback, accept an omitted feedback timestamp as unknown, validate linkage,
+  and count ignored checkbox template rows.
+- Build repeatable incremental plans with stable fingerprints and ignored recovery artifacts.
+- Treat whitespace, timestamps, scoring, recommendation, and feedback changes separately from
+  meaningful official-source changes.
+- Preserve absent opportunities and distinguish not-observed from unavailable-source states.
+- Reconcile partial outcomes by Record_ID, avoiding completed inserts and reporting missing
+  deterministic history events or concurrent-value conflicts.
+- Provide `sheets-sync --live --incremental --dry-run`; keep every incremental apply path disabled.
+
+Acceptance criteria:
+
+- Repeated cached synchronization proposes zero inserts and meaningful updates and preserves source
+  observation timestamps.
+- New records, material salary/status/date/content updates, Last_Seen-only observations, duplicate
+  IDs, missing IDs, recommendation demotion, and partial failures have deterministic tests.
+- Feedback preference, Saved, Hidden, and notes remain independent and untouched by planning.
+- The authenticated LIVE PILOT check reads all seven valid schemas. It found one feedback row whose
+  `Record_ID` contains a job title instead of the stable ID, so the incremental dry-run stopped
+  safely before planning and performed no writes.
+- Pytest, Ruff, YAML validation, and the opt-in read-only Google integration test pass.
+
 ## Milestone 5 — Discovery and personalization
 
 - Add a configurable open-web search adapter.
