@@ -152,7 +152,7 @@ Acceptance criteria:
 
 ## Milestone 4C.2 — Live pilot preparation and data-quality review
 
-Status: complete. Worksheet initialization remains a separately authorized next step.
+Status: complete. Worksheet initialization was separately authorized and completed.
 
 - Add YAML-configured deterministic recommendation classifications and explanations.
 - Keep source validity, opportunity facts, career stage, scoring, and personal relevance separate.
@@ -170,7 +170,13 @@ Acceptance evidence:
 - PhD-required research roles remain eligible future career targets.
 - The provided LIVE PILOT workbook passed authentication, environment, and exact-title checks.
 - Read-only inspection found all seven approved worksheets missing; initialization requires a
-  separately authorized `--apply`, so no worksheet or data write was performed.
+  separately authorized `--apply`.
+- The authorized initializer created exactly the seven approved worksheets with valid headers,
+  formatting, filters, and feedback controls; existing sheets and data were not deleted.
+- The post-initialization live dry-run matched the offline plan: 13 jobs, one PhD programme, one
+  event, and 38 watchlist targets proposed; all invalid/conflict counts were zero.
+- A final status read found zero opportunity, watchlist, feedback, run-log, and change-log records.
+  `sheets-sync --live --apply` remains blocked pending separate authorization.
 
 ## Milestone 5 — Discovery and personalization
 

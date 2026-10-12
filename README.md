@@ -85,8 +85,9 @@ research-radar sheets-init --live --dry-run
 research-radar sheets-sync --live --dry-run
 ```
 
-The init command only reports missing worksheets. `sheets-init --live --apply` and
-`sheets-sync --live --apply` remain disabled until a later, separately authorized step.
+`sheets-init --live --apply` is allowed only with the exact live data mode, live-pilot
+environment, configured pilot ID, workbook title, and explicit flag. It creates only missing
+approved worksheets. `sheets-sync --live --apply` remains disabled pending separate authorization.
 
 Run tests:
 

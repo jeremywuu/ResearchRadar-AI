@@ -17,6 +17,7 @@ from research_radar.live_integration import (
     prepare_live_sheets_preview,
     validate_configured_data_mode,
     validate_live_pilot_identity,
+    validate_live_pilot_write_environment,
 )
 from research_radar.sheets_demo import build_demo_sheets_adapter
 from research_radar.sheets_live import run_live_demo_sync
@@ -112,12 +113,14 @@ def _live_adapter() -> GoogleSheetsAdapter:
     return GoogleSheetsAdapter.from_environment()
 
 
-def _required_live_pilot_adapter() -> SheetsAdapter:
-    validate_configured_data_mode(DataMode.LIVE)
+def _required_live_pilot_adapter(*, for_write: bool = False) -> SheetsAdapter:
+    expected_id = validate_live_pilot_write_environment() if for_write else None
+    if not for_write:
+        validate_configured_data_mode(DataMode.LIVE)
     adapter = configured_live_pilot_adapter()
     if adapter is None:
         raise LiveDataError("GOOGLE_LIVE_PILOT_SPREADSHEET_ID is required")
-    validate_live_pilot_identity(adapter)
+    validate_live_pilot_identity(adapter, expected_spreadsheet_id=expected_id)
     return adapter
 
 
@@ -218,13 +221,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     try:
         if args.command == "sheets-init":
-            if args.live and args.apply:
-                print(
-                    "LIVE PILOT initialization apply is disabled in Milestone 4C.2; "
-                    "request separate write authorization"
-                )
-                return 1
-            adapter = _required_live_pilot_adapter() if args.live else _live_adapter()
+            adapter = (
+                _required_live_pilot_adapter(for_write=args.apply) if args.live else _live_adapter()
+            )
             plan = adapter.initialize_workbook(apply=args.apply)
             target = "LIVE PILOT" if args.live else "configured workbook"
             print(f"Google Sheets {target} initialization ({'apply' if args.apply else 'dry-run'})")
@@ -266,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Google Sheets live-data preview (dry-run; target={target})")
                 for category, plan in preview.workbook.plans.items():
                     _print_sync_plan(category, plan)
+                _print_sync_plan("watchlist", preview.watchlist_plan)
                 print(
                     f"provenance: valid={preview.provenance.valid_count}; "
                     f"blocked={preview.provenance.blocked_count}"
@@ -281,7 +281,14 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 print(f"review report: {preview.review_report_path}")
                 print("no writes performed")
-                return 1 if preview.workbook.failures or preview.provenance.blocked_count else 0
+                return (
+                    1
+                    if preview.workbook.failures
+                    or preview.provenance.blocked_count
+                    or preview.watchlist_plan.invalid_records
+                    or preview.watchlist_plan.conflicts
+                    else 0
+                )
             result = run_live_demo_sync(
                 _live_adapter(),
                 project_root=args.project_root,

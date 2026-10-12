@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from research_radar.config import load_career_preferences
+from research_radar.config import load_career_preferences, load_watchlist
 from research_radar.models import (
     AcademicEvent,
     CompensationDisclosureStatus,
@@ -28,11 +28,15 @@ from research_radar.models import (
 )
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline, run_phd_pipeline
 from research_radar.storage.sheets import (
+    WATCHLIST_SCHEMA,
     InMemorySheetsAdapter,
     SheetsAdapter,
+    SheetSyncPlan,
     WorkbookSyncReport,
     load_feedback,
+    plan_sheet_sync,
     sync_execution_report,
+    watchlist_rows,
 )
 
 
@@ -131,6 +135,7 @@ class LiveSheetsPreview:
     provenance: ProvenanceReport
     recommendations: RecommendationReport
     workbook: WorkbookSyncReport
+    watchlist_plan: SheetSyncPlan
     coverage: dict[str, SourceCoverage]
     review_report_path: Path
     offline: bool
@@ -187,10 +192,38 @@ def configured_live_pilot_adapter(
     return GoogleSheetsAdapter.from_settings(settings, environment=values)
 
 
-def validate_live_pilot_identity(adapter: SheetsAdapter) -> None:
+def validate_live_pilot_write_environment(
+    environment: Mapping[str, str] | None = None,
+) -> str:
+    """Require every explicit live-pilot write guard and return the configured ID."""
+
+    values = environment if environment is not None else os.environ
+    if values.get("RESEARCH_RADAR_DATA_MODE", "").strip().casefold() != DataMode.LIVE.value:
+        raise LiveDataError("RESEARCH_RADAR_DATA_MODE=live is required for LIVE PILOT writes")
+    if (
+        values.get("RESEARCH_RADAR_SHEETS_ENV", "").strip().casefold()
+        != TargetEnvironment.LIVE_PILOT.value
+    ):
+        raise LiveDataError(
+            "RESEARCH_RADAR_SHEETS_ENV=live-pilot is required for LIVE PILOT writes"
+        )
+    spreadsheet_id = values.get("GOOGLE_LIVE_PILOT_SPREADSHEET_ID", "").strip()
+    if not spreadsheet_id:
+        raise LiveDataError("GOOGLE_LIVE_PILOT_SPREADSHEET_ID is required for LIVE PILOT writes")
+    return spreadsheet_id
+
+
+def validate_live_pilot_identity(
+    adapter: SheetsAdapter,
+    *,
+    expected_spreadsheet_id: str | None = None,
+) -> None:
     configured_environment = getattr(getattr(adapter, "settings", None), "environment", None)
     if configured_environment != TargetEnvironment.LIVE_PILOT.value:
         raise LiveDataError("configured spreadsheet environment must be live-pilot")
+    configured_id = getattr(getattr(adapter, "settings", None), "spreadsheet_id", None)
+    if expected_spreadsheet_id is not None and configured_id != expected_spreadsheet_id:
+        raise LiveDataError("adapter spreadsheet ID does not match the configured LIVE PILOT ID")
     read_title = getattr(adapter, "get_spreadsheet_title", None)
     if read_title is None or read_title() != LIVE_PILOT_WORKBOOK_TITLE:
         raise LiveDataError(
@@ -242,12 +275,22 @@ def prepare_live_sheets_preview(
         preferences["recommendation_rules"],
     )
     safe_execution = _recommended_execution(execution, provenance, recommendations)
+    run_id = f"live_preview_{generated_at.strftime('%Y%m%dT%H%M%SZ')}"
     workbook = sync_execution_report(
         safe_execution,
         adapter,
         dry_run=True,
-        run_id=f"live_preview_{generated_at.strftime('%Y%m%dT%H%M%SZ')}",
+        run_id=run_id,
         timestamp=generated_at,
+    )
+    watchlist = load_watchlist(project_root / "config" / "watchlist.yaml")
+    watchlist_plan = plan_sheet_sync(
+        WATCHLIST_SCHEMA,
+        watchlist_rows(watchlist),
+        adapter.read_worksheet("Watchlist"),
+        run_id=run_id,
+        timestamp=generated_at,
+        include_change_log=False,
     )
     coverage = _source_coverage(metadata, execution)
     review_path = _write_review_report(
@@ -256,6 +299,7 @@ def prepare_live_sheets_preview(
         provenance=provenance,
         recommendations=recommendations,
         workbook=workbook,
+        watchlist_plan=watchlist_plan,
         coverage=coverage,
         generated_at=generated_at,
         offline=offline,
@@ -266,6 +310,7 @@ def prepare_live_sheets_preview(
         provenance=provenance,
         recommendations=recommendations,
         workbook=workbook,
+        watchlist_plan=watchlist_plan,
         coverage=coverage,
         review_report_path=review_path,
         offline=offline,
@@ -719,6 +764,7 @@ def _write_review_report(
     provenance: ProvenanceReport,
     recommendations: RecommendationReport,
     workbook: WorkbookSyncReport,
+    watchlist_plan: SheetSyncPlan,
     coverage: dict[str, SourceCoverage],
     generated_at: datetime,
     offline: bool,
@@ -740,6 +786,8 @@ def _write_review_report(
         + ("offline simulated empty workbook" if offline else "configured LIVE PILOT workbook")
         + "`",
         "Sheet_Synced_At: `None` (dry-run; no writes)",
+        f"Watchlist plan: insert={watchlist_plan.insert_count}, "
+        f"update={watchlist_plan.update_count}, unchanged={watchlist_plan.unchanged_count}",
         "",
         "## Recommendation summary",
         "",

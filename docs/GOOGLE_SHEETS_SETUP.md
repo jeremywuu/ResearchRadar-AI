@@ -160,6 +160,13 @@ research-radar sheets-init --live --dry-run
 research-radar sheets-sync --live --dry-run --reference-date 2026-10-12
 ```
 
-If initialization reports missing worksheets, stop. Milestone 4C.2 disables
-`sheets-init --live --apply` and `sheets-sync --live --apply`; a subsequent explicit authorization
-is required before either structural or opportunity-data writes are enabled.
+After a separately recorded worksheet-initialization authorization, create only missing approved
+worksheets with:
+
+```bash
+research-radar sheets-init --live --apply
+```
+
+The command requires the exact live mode, live-pilot environment, configured pilot ID, title, and
+explicit flag. `sheets-sync --live --apply` remains disabled and requires a different future
+authorization.

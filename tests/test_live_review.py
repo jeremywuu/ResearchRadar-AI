@@ -250,6 +250,7 @@ def test_offline_preview_is_dry_run_and_generates_human_review(tmp_path: Path) -
         "phd": 1,
         "events": 1,
     }
+    assert preview.watchlist_plan.insert_count == 38
     report = preview.review_report_path.read_text()
     assert "ResearchRadar Live Data Review" in report
     assert "Research Scientist" in report

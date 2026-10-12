@@ -187,8 +187,10 @@ education, language, funding, or deadlines remain unknown and visible in the rev
 
 The dedicated live-pilot workbook is selected only through
 `GOOGLE_LIVE_PILOT_SPREADSHEET_ID`, must use the `live-pilot` environment, and must have the exact
-title `ResearchRadar AI — LIVE PILOT`. Both live-pilot initialization and data apply remain
-disabled until separately authorized.
+title `ResearchRadar AI — LIVE PILOT`. Initialization and data synchronization require separate
+authorizations. The completed worksheet-initialization authorization permits only explicit
+`sheets-init --live --apply` after revalidating data mode, environment, spreadsheet ID, and exact
+title. Opportunity synchronization apply remains disabled.
 
 ## Future capabilities
 

@@ -106,6 +106,7 @@ def test_cli_live_sheets_preview_is_offline_and_never_writes(
         workbook=SimpleNamespace(
             plans={"jobs": SheetSyncPlan(sheet_name="Industry_Jobs")}, failures={}
         ),
+        watchlist_plan=SheetSyncPlan(sheet_name="Watchlist"),
         provenance=SimpleNamespace(valid_count=27, blocked_count=0),
         recommendations=SimpleNamespace(counts={}),
         coverage={},
@@ -132,6 +133,7 @@ def test_cli_live_sheets_preview_is_offline_and_never_writes(
     assert exit_code == 0
     assert "offline simulated empty workbook" in output
     assert "provenance: valid=27; blocked=0" in output
+    assert "watchlist: insert=0" in output
     assert "no writes performed" in output
 
 
@@ -173,13 +175,112 @@ def test_live_pilot_init_dry_run_uses_only_dedicated_adapter(
     assert "no writes performed" in output
 
 
-def test_live_pilot_init_apply_is_disabled_before_adapter_access(
+def test_live_pilot_init_apply_is_narrowly_authorized(
     monkeypatch: pytest.MonkeyPatch, capsys: object
 ) -> None:
+    apply_calls: list[bool] = []
+
+    class PilotAdapter:
+        settings = SimpleNamespace(environment="live-pilot", spreadsheet_id="pilot-id")
+
+        def get_spreadsheet_title(self) -> str:
+            return "ResearchRadar AI — LIVE PILOT"
+
+        def initialize_workbook(self, *, apply: bool) -> object:
+            apply_calls.append(apply)
+            return SimpleNamespace(
+                existing_sheets=(),
+                missing_sheets=tuple(SHEET_SCHEMAS),
+                incompatible_headers={},
+            )
+
+    monkeypatch.setenv("GOOGLE_LIVE_PILOT_SPREADSHEET_ID", "pilot-id")
+    monkeypatch.setenv("RESEARCH_RADAR_SHEETS_ENV", "live-pilot")
+    monkeypatch.setenv("RESEARCH_RADAR_DATA_MODE", "live")
     monkeypatch.setattr(
         "research_radar.cli.configured_live_pilot_adapter",
-        lambda: pytest.fail("adapter must not be loaded before write refusal"),
+        lambda: PilotAdapter(),
+    )
+    monkeypatch.setattr(
+        "research_radar.cli._live_adapter",
+        lambda: pytest.fail("TEST spreadsheet adapter must not be loaded"),
+    )
+
+    assert main(["sheets-init", "--live", "--apply"]) == 0
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert "LIVE PILOT initialization (apply)" in output
+    assert "created: 7 worksheet(s)" in output
+    assert apply_calls == [True]
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "message"),
+    [
+        ("RESEARCH_RADAR_DATA_MODE", "synthetic", "DATA_MODE"),
+        ("RESEARCH_RADAR_SHEETS_ENV", "test", "live-pilot"),
+    ],
+)
+def test_live_pilot_init_apply_rejects_wrong_write_environment_before_initialization(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: object,
+    variable: str,
+    value: str,
+    message: str,
+) -> None:
+    monkeypatch.setenv("GOOGLE_LIVE_PILOT_SPREADSHEET_ID", "pilot-id")
+    monkeypatch.setenv("RESEARCH_RADAR_SHEETS_ENV", "live-pilot")
+    monkeypatch.setenv("RESEARCH_RADAR_DATA_MODE", "live")
+    monkeypatch.setenv(variable, value)
+    monkeypatch.setattr(
+        "research_radar.cli.configured_live_pilot_adapter",
+        lambda: pytest.fail("adapter must not load for an invalid write environment"),
     )
 
     assert main(["sheets-init", "--live", "--apply"]) == 1
-    assert "apply is disabled" in capsys.readouterr().out  # type: ignore[attr-defined]
+    assert message in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_live_pilot_init_apply_rejects_adapter_id_mismatch(
+    monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    class WrongPilotAdapter:
+        settings = SimpleNamespace(environment="live-pilot", spreadsheet_id="wrong-id")
+
+        def get_spreadsheet_title(self) -> str:
+            return "ResearchRadar AI — LIVE PILOT"
+
+        def initialize_workbook(self, *, apply: bool) -> object:
+            pytest.fail("initialization must not run for an ID mismatch")
+
+    monkeypatch.setenv("GOOGLE_LIVE_PILOT_SPREADSHEET_ID", "approved-id")
+    monkeypatch.setenv("RESEARCH_RADAR_SHEETS_ENV", "live-pilot")
+    monkeypatch.setenv("RESEARCH_RADAR_DATA_MODE", "live")
+    monkeypatch.setattr(
+        "research_radar.cli.configured_live_pilot_adapter", lambda: WrongPilotAdapter()
+    )
+
+    assert main(["sheets-init", "--live", "--apply"]) == 1
+    assert "does not match" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_live_pilot_init_apply_rejects_wrong_workbook_title(
+    monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    class WrongTitleAdapter:
+        settings = SimpleNamespace(environment="live-pilot", spreadsheet_id="approved-id")
+
+        def get_spreadsheet_title(self) -> str:
+            return "ResearchRadar AI — TEST"
+
+        def initialize_workbook(self, *, apply: bool) -> object:
+            pytest.fail("initialization must not run for a title mismatch")
+
+    monkeypatch.setenv("GOOGLE_LIVE_PILOT_SPREADSHEET_ID", "approved-id")
+    monkeypatch.setenv("RESEARCH_RADAR_SHEETS_ENV", "live-pilot")
+    monkeypatch.setenv("RESEARCH_RADAR_DATA_MODE", "live")
+    monkeypatch.setattr(
+        "research_radar.cli.configured_live_pilot_adapter", lambda: WrongTitleAdapter()
+    )
+
+    assert main(["sheets-init", "--live", "--apply"]) == 1
+    assert "LIVE PILOT" in capsys.readouterr().out  # type: ignore[attr-defined]
