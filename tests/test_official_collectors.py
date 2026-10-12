@@ -92,6 +92,39 @@ def test_greenhouse_empty_result_is_success_no_matches() -> None:
     assert result.records == []
 
 
+def test_greenhouse_prioritizes_tracked_jobs_and_reserves_new_discovery_capacity() -> None:
+    listing_url = AnthropicGreenhouseAdapter.source.retrieval_url
+    jobs = [
+        {
+            "id": job_id,
+            "title": f"Research Engineer {job_id}",
+            "absolute_url": f"https://job-boards.greenhouse.io/anthropic/jobs/{job_id}",
+            "location": {"name": "San Francisco, CA"},
+            "content": "",
+        }
+        for job_id in range(1, 31)
+    ]
+    routes = {listing_url: response(listing_url, json.dumps({"jobs": jobs}))}
+    for job in jobs:
+        detail_url = f"https://boards-api.greenhouse.io/v1/boards/anthropic/jobs/{job['id']}"
+        routes[detail_url] = response(detail_url, json.dumps(job))
+    transport = RouteTransport(routes)
+    adapter = AnthropicGreenhouseAdapter(
+        HttpClient(transport=transport),
+        tracked_job_ids={str(job_id) for job_id in range(1, 26)},
+    )
+
+    result = adapter.collect(observed_at=NOW)
+
+    observed_ids = {record["official_job_id"] for record in result.records}
+    assert result.records_fetched == 30
+    assert result.records_matched == 30
+    assert result.records_considered == 25
+    assert {str(job_id) for job_id in range(1, 21)} <= observed_ids
+    assert {str(job_id) for job_id in range(26, 31)} <= observed_ids
+    assert not ({str(job_id) for job_id in range(21, 26)} & observed_ids)
+
+
 @pytest.mark.parametrize(
     ("outcome", "expected"),
     [

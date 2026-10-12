@@ -454,3 +454,30 @@ The append adapter ignores an already-present event ID, making retries idempoten
 - Batch inserts, targeted updates, and append-only logs separately.
 - A dry-run returns the complete plan and performs no adapter writes.
 - An affected-sheet schema/conflict failure does not prevent other categories from syncing.
+
+## Fresh observation comparison artifact
+
+Each timestamped raw observation may include `observation_analysis.json` with one entry per stable
+record:
+
+```text
+record_id
+category
+organization
+title
+status                 # NEW, UNCHANGED, CONTENT_CHANGED, OBSERVATION_ONLY_CHANGED,
+                       # NOT_OBSERVED, CONFIRMED_CLOSED, SOURCE_UNAVAILABLE, NEEDS_REVIEW
+changed_fields[]       # field name plus previous/current source values
+official_url?
+previous_observed_at?
+current_observed_at?
+source_id?
+reason
+event_id?              # deterministic prospective ID; not an appended Change_Log row
+```
+
+Fresh source metadata additionally distinguishes `records_fetched` (complete listing population),
+`records_matched` (title-filter matches), `records_considered` (bounded detail requests), extracted
+records, and accepted records. Reconciled snapshots copy forward unobserved records rather than
+deleting them. Their previous `First_Seen`, `Last_Seen`, content, status, scores, and feedback remain
+unchanged.

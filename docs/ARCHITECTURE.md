@@ -231,6 +231,32 @@ Change event IDs are deterministic over category, record, change type, field, ol
 value. Retrying the same plan therefore does not duplicate `Change_Log` rows. Run log IDs combine
 run ID and category. Category planning/apply failures are isolated from sibling categories.
 
+## Fresh official-source observation
+
+`collect --fresh-observation` is the bounded second-observation boundary. Before network access it
+copies all four current live snapshot files into a timestamped `data/history/` directory. The new
+raw results are written separately under `data/observations/`; only after collection finishes are
+they reconciled into `data/live/`. All three locations are ignored by Git.
+
+Reconciliation matches only stable `Record_ID` values and emits `NEW`, `UNCHANGED`,
+`CONTENT_CHANGED`, `OBSERVATION_ONLY_CHANGED`, `NOT_OBSERVED`, `CONFIRMED_CLOSED`,
+`SOURCE_UNAVAILABLE`, or `NEEDS_REVIEW`. Missing records are copied forward with their previous
+facts and timestamps. A failed or partial source produces `SOURCE_UNAVAILABLE`; absence from a
+successful bounded scan produces `NOT_OBSERVED`. Neither state changes opportunity status. Only a
+fresh record carrying an explicit official closed status can produce `CONFIRMED_CLOSED`.
+
+The Anthropic adapter keeps its 25-detail-request ceiling. It prioritizes up to 20 previously
+tracked official job IDs and reserves up to five requests for new title-matched candidates. If
+fewer new candidates exist, tracked records fill unused capacity. Metadata records the total board
+population, title matches, selected detail requests, extracted records, and pipeline acceptances
+separately. A tracked job omitted because of this cap is not closure evidence.
+
+Meaningful comparison canonicalizes whitespace and excludes observation, sheet, ranking,
+recommendation, and feedback metadata. A repeated observation advances `Last_Seen` and
+`Source_Retrieved_At`, while `Content_Updated_At` is copied forward unless source content changes.
+The local analysis includes deterministic prospective event IDs but a dry-run never appends them
+to `Change_Log`.
+
 ## Configuration
 
 Preferences and watchlist targets live in YAML. `research_radar.config` uses `yaml.safe_load` and

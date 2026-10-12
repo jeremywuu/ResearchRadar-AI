@@ -43,6 +43,7 @@ class SourceCollectionResult:
     retrieved_at: datetime
     records: list[dict[str, Any]] = field(default_factory=list)
     records_fetched: int = 0
+    records_matched: int = 0
     records_considered: int = 0
     errors: list[str] = field(default_factory=list)
     http_statuses: list[int] = field(default_factory=list)

@@ -9,6 +9,7 @@ from pathlib import Path
 from research_radar.collectors.service import collect_live
 from research_radar.config import ConfigValidationError, load_all_configs
 from research_radar.demo import process_demo, run_demo
+from research_radar.fresh_observation import collect_fresh_observation
 from research_radar.live_integration import (
     DataMode,
     LiveDataError,
@@ -98,6 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--project-root", type=Path, default=Path.cwd())
     collect.add_argument("--output-dir", type=Path, default=Path("data/live"))
     collect.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
+    collect.add_argument(
+        "--fresh-observation",
+        action="store_true",
+        help="archive the current live snapshot and reconcile one fresh bounded scan",
+    )
     return parser
 
 
@@ -191,14 +197,30 @@ def main(argv: list[str] | None = None) -> int:
         observed_at = datetime.now(UTC)
         categories = ("jobs", "phd", "events") if args.category == "all" else (args.category,)
         try:
-            result = collect_live(
-                categories,
-                project_root=args.project_root,
-                output_dir=args.output_dir,
-                observed_at=observed_at,
-                reference_date=args.reference_date,
-                source_id=args.source,
-            )
+            fresh_run = None
+            if args.fresh_observation:
+                if args.category != "all" or args.source is not None:
+                    raise ValueError(
+                        "--fresh-observation requires category 'all' and all three existing sources"
+                    )
+                fresh_run = collect_fresh_observation(
+                    project_root=args.project_root,
+                    live_dir=args.output_dir,
+                    history_root=args.project_root / "data" / "history",
+                    observations_root=args.project_root / "data" / "observations",
+                    observed_at=observed_at,
+                    reference_date=args.reference_date,
+                )
+                result = fresh_run.collection
+            else:
+                result = collect_live(
+                    categories,
+                    project_root=args.project_root,
+                    output_dir=args.output_dir,
+                    observed_at=observed_at,
+                    reference_date=args.reference_date,
+                    source_id=args.source,
+                )
         except ValueError as exc:
             print(f"Collection failed: {exc}")
             return 1
@@ -220,6 +242,12 @@ def main(argv: list[str] | None = None) -> int:
             if report.output_path:
                 print(f"  output: {report.output_path}")
         print(f"source metadata: {result.metadata_path}")
+        if fresh_run is not None:
+            print(f"previous snapshot: {fresh_run.archive_dir}")
+            print(f"fresh raw observation: {fresh_run.fresh_dir}")
+            print(f"observation analysis: {fresh_run.analysis_path}")
+            for status, count in fresh_run.analysis.counts.items():
+                print(f"change {status.value}: {count}")
         failed_health = {"FAILED", "BLOCKED", "UNSUPPORTED"}
         return int(
             bool(result.execution.failed_pipelines)
@@ -298,7 +326,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"recommendation {classification.value}: {count}")
                 for source in preview.coverage.values():
                     print(
-                        f"coverage {source.source_id}: returned={source.records_returned}; "
+                        f"coverage {source.source_id}: health={source.health}; "
+                        f"returned={source.records_returned}; matched={source.records_matched}; "
                         f"considered={source.records_considered}; "
                         f"extracted={source.records_extracted}; "
                         f"accepted={source.records_accepted}"

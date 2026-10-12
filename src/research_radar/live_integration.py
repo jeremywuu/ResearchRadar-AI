@@ -163,7 +163,10 @@ INITIAL_LIVE_PILOT_APPROVAL = InitialLiveSyncApproval(
 @dataclass(frozen=True)
 class SourceCoverage:
     source_id: str
+    health: str
+    retrieved_at: str | None
     records_returned: int
+    records_matched: int
     records_considered: int
     records_extracted: int
     records_accepted: int
@@ -593,6 +596,18 @@ def _incremental_plan_payload(preview: LiveSheetsPreview) -> dict[str, Any]:
         },
         "pipeline_failures": preview.workbook.failures,
         "provenance_blocked": preview.provenance.blocked_count,
+        "source_observations": {
+            source_id: {
+                "health": source.health,
+                "retrieved_at": source.retrieved_at,
+                "records_returned": source.records_returned,
+                "records_matched": source.records_matched,
+                "records_considered": source.records_considered,
+                "records_extracted": source.records_extracted,
+                "records_accepted": source.records_accepted,
+            }
+            for source_id, source in sorted(preview.coverage.items())
+        },
     }
 
 
@@ -1154,6 +1169,7 @@ def _source_coverage(
                 accepted_by_source[source_id] = accepted_by_source.get(source_id, 0) + 1
     result: dict[str, SourceCoverage] = {}
     sources = metadata.get("sources", {})
+    pipelines = metadata.get("pipelines", {})
     if not isinstance(sources, dict):
         return result
     for source_id, source in sources.items():
@@ -1161,12 +1177,25 @@ def _source_coverage(
             continue
         records = source.get("records", [])
         extracted = len(records) if isinstance(records, list) else 0
+        descriptor = source.get("source", {})
+        category = descriptor.get("category") if isinstance(descriptor, dict) else None
+        pipeline = pipelines.get(category, {}) if isinstance(pipelines, dict) else {}
+        accepted = (
+            int(pipeline["records_accepted"])
+            if isinstance(pipeline, dict) and "records_accepted" in pipeline
+            else accepted_by_source.get(source_id, 0)
+        )
         result[source_id] = SourceCoverage(
             source_id=source_id,
+            health=str(source.get("health", "UNKNOWN")),
+            retrieved_at=(
+                str(source["retrieved_at"]) if source.get("retrieved_at") is not None else None
+            ),
             records_returned=int(source.get("records_fetched", 0)),
+            records_matched=int(source.get("records_matched", 0)),
             records_considered=int(source.get("records_considered", extracted)),
             records_extracted=extracted,
-            records_accepted=accepted_by_source.get(source_id, 0),
+            records_accepted=accepted,
         )
     return result
 

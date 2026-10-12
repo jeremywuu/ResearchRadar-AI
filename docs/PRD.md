@@ -213,6 +213,20 @@ Every incremental dry-run receives a content-derived plan fingerprint and an ign
 recovery artifact. Live incremental apply remains disabled until the user separately approves the
 exact fingerprint and deliberate confirmation phrase. Production synchronization remains disabled.
 
+## Milestone 4D.1 fresh-observation boundary
+
+A fresh scan is an explicit, bounded network action against only the three existing official
+adapters. The prior verified snapshot must be archived before retrieval, and the raw new
+observation must be stored separately before reconciliation. Anthropic detail retrieval remains
+capped at 25 requests, prioritizes tracked official IDs, and retains bounded capacity for new
+title-matched discovery.
+
+Source change state is independent of recommendation priority. One omission, candidate caps,
+filtering, ordering, timeouts, blocks, partial retrieval, or parser failure cannot confirm closure.
+Only explicit official evidence may produce `CONFIRMED_CLOSED`; otherwise prior facts and user
+feedback remain preserved. The milestone may produce a read-only LIVE PILOT plan and deterministic
+prospective change events, but it cannot write opportunity rows or logs to Google Sheets.
+
 ## Future capabilities
 
 - PhD career intelligence

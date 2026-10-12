@@ -202,8 +202,7 @@ Acceptance evidence:
 
 ## Milestone 4C.4 — Feedback round-trip and incremental live sync
 
-Status: implementation complete; final LIVE PILOT dry-run awaits correction of one user-entered
-feedback linkage. Incremental apply remains disabled.
+Status: complete. Incremental apply remains disabled.
 
 - Load canonical user feedback, accept an omitted feedback timestamp as unknown, validate linkage,
   and count ignored checkbox template rows.
@@ -222,10 +221,49 @@ Acceptance criteria:
 - New records, material salary/status/date/content updates, Last_Seen-only observations, duplicate
   IDs, missing IDs, recommendation demotion, and partial failures have deterministic tests.
 - Feedback preference, Saved, Hidden, and notes remain independent and untouched by planning.
-- The authenticated LIVE PILOT check reads all seven valid schemas. It found one feedback row whose
-  `Record_ID` contains a job title instead of the stable ID, so the incremental dry-run stopped
-  safely before planning and performed no writes.
+- The authenticated LIVE PILOT check reads all seven valid schemas. The corrected feedback row is
+  linked to `job_fd5e30f801bee750` with preference `Interested`, Saved true, Hidden false, and notes
+  preserved. The accepted dry-run reported zero inserts, updates, conflicts, or invalid records.
 - Pytest, Ruff, YAML validation, and the opt-in read-only Google integration test pass.
+
+## Milestone 4D.1 — Fresh observation and real-world change detection
+
+Status: complete with source-availability limitation. No Google Sheets apply is authorized.
+
+- Archive the prior verified live snapshot before any source retrieval.
+- Perform one bounded read-only collection through each of the three existing official adapters.
+- Compare stable IDs and separate content changes, observation refreshes, missing records, explicit
+  closures, source failures, and review conflicts.
+- Preserve unobserved history, source evidence, recommendation state, and user feedback.
+- Generate an ignored human review report and a fresh read-only LIVE PILOT plan fingerprint.
+
+Acceptance criteria:
+
+- Anthropic detail requests remain capped at 25 while prioritizing tracked IDs and reserving new
+  discovery capacity; coverage metrics do not imply full-market recall.
+- `First_Seen` is stable, only observed records advance `Last_Seen`, and only material changes
+  advance `Content_Updated_At`.
+- Missing, capped, blocked, timed-out, partial, or parser-failed records are never inferred closed.
+- New and materially changed records retain official evidence and deterministic prospective change
+  IDs; dry-run creates no Sheets or Change_Log writes.
+- The LIVE PILOT plan preserves canonical feedback and reports a new evidence-derived fingerprint.
+- Offline tests, configuration validation, Ruff, and authenticated read-only checks pass.
+
+Completion evidence:
+
+- The prior 27-record snapshot was archived before the sole bounded collection attempt; the raw
+  failed observation and comparison artifact were stored separately under ignored local data.
+- All three HTTPS requests failed certificate-chain verification. TLS verification was not
+  disabled and no source was retried; all 27 historical records were conservatively classified
+  `SOURCE_UNAVAILABLE`, with zero closures or fabricated observations.
+- The reconciled job, PhD, and event record arrays are byte-for-byte equivalent after canonical
+  JSON sorting to the archived arrays, so no source timestamp, fact, score, or feedback advanced.
+- The authenticated LIVE PILOT plan reports zero inserts, updates, invalid records, and conflicts;
+  all 15 synchronized opportunities and 38 watchlist rows are unchanged.
+- Canonical feedback remains linked to `job_fd5e30f801bee750` as `Interested`, Saved true, Hidden
+  false, with notes preserved and 1,998 template rows ignored.
+- Source health and retrieval evidence now participate in the plan fingerprint even when no cell
+  write is proposed.
 
 ## Milestone 5 — Discovery and personalization
 

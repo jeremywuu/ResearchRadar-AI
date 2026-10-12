@@ -600,6 +600,49 @@ def test_incremental_cached_preview_has_stable_fingerprint_and_no_actions(tmp_pa
     assert first.artifact_path.exists()
 
 
+def test_incremental_fingerprint_changes_with_fresh_source_observation(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+    initial = prepare_live_sheets_preview(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+    )
+    adapter = PilotMemoryAdapter(
+        {
+            plan.sheet_name: [operation.row for operation in plan.inserts]
+            for plan in initial.workbook.plans.values()
+        }
+        | {"Watchlist": [operation.row for operation in initial.watchlist_plan.inserts]}
+    )
+    first = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=adapter,
+    )
+    metadata_path = live_dir / "source_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["sources"]["official_jobs"]["health"] = "FAILED"
+    metadata["sources"]["official_jobs"]["retrieved_at"] = "2026-10-12T09:00:00+00:00"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    second = prepare_incremental_live_sync(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=adapter,
+    )
+
+    assert first.plan_fingerprint != second.plan_fingerprint
+
+
 def test_incremental_feedback_round_trip_preserves_user_owned_fields(tmp_path: Path) -> None:
     live_dir = tmp_path / "live"
     ids = _write_live_snapshots(live_dir)

@@ -9,9 +9,10 @@ with source health, extraction status, retrieval timestamps, counts, HTTP status
 bounded extracted records.
 
 Coverage counters have distinct meanings: `records_fetched` is the population returned by the
-source, `records_considered` is the bounded filter result considered for detail extraction,
-`records_extracted` is the parsed candidate count, and `records_accepted` is the downstream
-pipeline count. These must not be collapsed into a claim about total source coverage.
+source, `records_matched` is the complete deterministic title-filter result,
+`records_considered` is the bounded set selected for detail extraction, `records_extracted` is the
+parsed candidate count, and `records_accepted` is the downstream pipeline count. These must not be
+collapsed into a claim about total source coverage.
 
 The states are independent:
 
@@ -25,10 +26,11 @@ The states are independent:
 
 Anthropic's official careers page links roles on the `anthropic` Greenhouse board. The adapter
 uses Greenhouse's public, unauthenticated GET API: one lightweight `content=false` list request,
-then at most 25 details whose titles match deterministic research-role terms. The bound limits
-payload and request volume; it is not a quota between opportunity categories. Job IDs and
-canonical Greenhouse URLs provide source-owned identity. Unknown language and compensation remain
-unknown.
+then at most 25 detail requests. A fresh-observation run prioritizes up to 20 previously tracked
+official IDs and reserves up to five slots for new deterministic title matches; unused new slots
+are filled by tracked roles. The bound limits payload and request volume and means an omitted role
+cannot be treated as closed. Job IDs and canonical Greenhouse URLs provide source-owned identity.
+Unknown language and compensation remain unknown.
 
 ### UCL Gatsby PhD programme
 
@@ -82,7 +84,8 @@ Nothing in this milestone writes live opportunities to Google Sheets.
    cases.
 7. Run a bounded, explicit `collect ... --live` smoke test and document actual limitations.
 
-On this Mac, Python required a configured trusted CA bundle for HTTPS verification. The final
-smoke test used the already-installed virtual-environment CA bundle through `SSL_CERT_FILE`; TLS
-verification was never disabled. Environments with a correctly configured system trust store do
-not need this override.
+On this Mac, Python may require a configured trusted CA bundle for HTTPS verification. TLS
+verification must never be disabled. The Milestone 4D.1 bounded scan encountered certificate-chain
+verification failures for all three sources; the run was retained as a genuine failed observation,
+was not retried, and preserved every prior opportunity as `SOURCE_UNAVAILABLE`. A later scan may
+use an already-installed trusted CA bundle through `SSL_CERT_FILE` after explicit authorization.

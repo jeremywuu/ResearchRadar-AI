@@ -119,9 +119,16 @@ class AnthropicGreenhouseAdapter:
         re.IGNORECASE,
     )
     _MAX_DETAILS = 25
+    _NEW_DISCOVERY_RESERVE = 5
 
-    def __init__(self, client: HttpClient | None = None) -> None:
+    def __init__(
+        self,
+        client: HttpClient | None = None,
+        *,
+        tracked_job_ids: set[str] | frozenset[str] | None = None,
+    ) -> None:
         self.client = client or HttpClient()
+        self.tracked_job_ids = frozenset(tracked_job_ids or ())
 
     def collect(self, *, observed_at: datetime) -> SourceCollectionResult:
         try:
@@ -130,13 +137,30 @@ class AnthropicGreenhouseAdapter:
             jobs = payload.get("jobs")
             if not isinstance(jobs, list):
                 raise ValueError("Greenhouse response has no jobs list")
-            candidates = [
+            title_matches = [
                 job
                 for job in jobs
                 if isinstance(job, dict)
                 and isinstance(job.get("title"), str)
                 and self._RELEVANT_TITLE.search(job["title"])
-            ][: self._MAX_DETAILS]
+            ]
+            all_tracked = [
+                job
+                for job in jobs
+                if isinstance(job, dict) and str(job.get("id")) in self.tracked_job_ids
+            ]
+            new_matches = [
+                job for job in title_matches if str(job.get("id")) not in self.tracked_job_ids
+            ]
+            tracked_limit = self._MAX_DETAILS - min(self._NEW_DISCOVERY_RESERVE, len(new_matches))
+            candidates = [*all_tracked[:tracked_limit], *new_matches[: self._NEW_DISCOVERY_RESERVE]]
+            selected_ids = {str(job.get("id")) for job in candidates}
+            unselected_pool = (
+                *all_tracked[tracked_limit:],
+                *new_matches[self._NEW_DISCOVERY_RESERVE :],
+            )
+            remaining = [job for job in unselected_pool if str(job.get("id")) not in selected_ids]
+            candidates.extend(remaining[: self._MAX_DETAILS - len(candidates)])
             records: list[dict[str, Any]] = []
             errors: list[str] = []
             statuses = [listing.status]
@@ -174,6 +198,7 @@ class AnthropicGreenhouseAdapter:
                 retrieved_at=observed_at,
                 records=records,
                 records_fetched=len(jobs),
+                records_matched=len(title_matches),
                 records_considered=len(candidates),
                 errors=errors,
                 http_statuses=statuses,
