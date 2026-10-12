@@ -29,6 +29,9 @@ Google credentials are not required for the ordinary test suite. Follow
 `docs/GOOGLE_SHEETS_SETUP.md` before using live commands; never commit `.env`, OAuth client files,
 or cached tokens.
 
+The read-only weekly GitHub Actions pilot is documented in `docs/GITHUB_ACTIONS_SETUP.md`. It is
+not active until a private repository and Google WIF identity are configured manually.
+
 ## Commands
 
 Validate all YAML configuration with PyYAML and the project schema:

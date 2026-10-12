@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 SHEETS_SCOPES = ("https://www.googleapis.com/auth/spreadsheets",)
+SHEETS_READ_ONLY_SCOPES = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
 
 
 class SheetsAuthenticationError(RuntimeError):
@@ -58,8 +59,9 @@ class DefaultGoogleCredentialsProvider:
                 "Google authentication support is unavailable; no credentials were loaded"
             ) from exc
 
+        scopes = self._scopes()
         try:
-            credentials, _ = libraries.adc(scopes=SHEETS_SCOPES)
+            credentials, _ = libraries.adc(scopes=scopes)
             return credentials
         except libraries.default_credentials_error:
             pass
@@ -74,7 +76,7 @@ class DefaultGoogleCredentialsProvider:
         try:
             if token_path.is_file():
                 credentials = libraries.authorized_user_credentials.from_authorized_user_file(
-                    str(token_path), SHEETS_SCOPES
+                    str(token_path), scopes
                 )
                 if credentials.expired and credentials.refresh_token:
                     credentials.refresh(libraries.request_type())
@@ -84,7 +86,7 @@ class DefaultGoogleCredentialsProvider:
             if client_file_value:
                 client_path = Path(client_file_value).expanduser()
                 flow = libraries.installed_app_flow.from_client_secrets_file(
-                    str(client_path), SHEETS_SCOPES
+                    str(client_path), scopes
                 )
                 credentials = flow.run_local_server(port=0)
                 self._save_token(token_path, credentials.to_json())
@@ -98,6 +100,10 @@ class DefaultGoogleCredentialsProvider:
             "No Google credentials found. Configure Application Default Credentials or an "
             "installed-app OAuth client"
         )
+
+    def _scopes(self) -> tuple[str, ...]:
+        read_only = self.environment.get("RESEARCH_RADAR_GOOGLE_READ_ONLY", "").strip().casefold()
+        return SHEETS_READ_ONLY_SCOPES if read_only in {"1", "true", "yes"} else SHEETS_SCOPES
 
     @staticmethod
     def _save_token(path: Path, token_json: str) -> None:

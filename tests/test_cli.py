@@ -97,6 +97,22 @@ def test_live_configuration_errors_are_human_readable(
     assert "GOOGLE_SPREADSHEET_ID is required" in capsys.readouterr().out  # type: ignore[attr-defined]
 
 
+def test_weekly_run_missing_cloud_credentials_is_reported_without_collection(
+    monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    monkeypatch.setattr(
+        "research_radar.cli._required_live_pilot_adapter",
+        lambda **_: (_ for _ in ()).throw(SheetsConfigurationError("missing cloud credentials")),
+    )
+    monkeypatch.setattr(
+        "research_radar.cli.run_weekly_monitor",
+        lambda **_: pytest.fail("collection must not start without credentials"),
+    )
+
+    assert main(["weekly-run", "--live"]) == 1
+    assert "missing cloud credentials" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
 def test_cli_live_sheets_preview_is_offline_and_never_writes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: object
 ) -> None:

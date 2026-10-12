@@ -36,6 +36,7 @@ from research_radar.storage.sheets import (
     SheetSyncPlan,
     sync_execution_report,
 )
+from research_radar.weekly import run_weekly_monitor
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,6 +114,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="archive the current live snapshot and reconcile one fresh bounded scan",
     )
+    weekly = subparsers.add_parser(
+        "weekly-run", help="run bounded read-only monitoring and generate a weekly brief"
+    )
+    weekly.add_argument("--live", action="store_true", required=True)
+    weekly.add_argument("--project-root", type=Path, default=Path.cwd())
+    weekly.add_argument("--output-dir", type=Path, default=Path("data/automation/run"))
+    weekly.add_argument("--state-dir", type=Path, default=Path("data/automation/state/live"))
+    weekly.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
     return parser
 
 
@@ -263,6 +272,27 @@ def main(argv: list[str] | None = None) -> int:
             or any(source.health.value in failed_health for source in result.sources.values())
         )
     try:
+        if args.command == "weekly-run":
+            observed_at = datetime.now(UTC)
+            adapter = _required_live_pilot_adapter()
+            result = run_weekly_monitor(
+                project_root=args.project_root,
+                output_dir=args.output_dir,
+                state_dir=args.state_dir,
+                observed_at=observed_at,
+                reference_date=args.reference_date,
+                adapter=adapter,
+            )
+            print("ResearchRadar weekly monitoring completed (read-only)")
+            print(f"sources successful={result.source_successes}; issues={result.source_issues}")
+            print(
+                "durable baseline: "
+                + ("available" if result.durable_baseline_available else "unavailable")
+            )
+            print(f"plan fingerprint: {result.plan.plan_fingerprint}")
+            print(f"report: {result.report_path}")
+            print("no Google Sheets writes performed")
+            return result.exit_code
         if args.command == "sheets-init":
             adapter = (
                 _required_live_pilot_adapter(for_write=args.apply) if args.live else _live_adapter()

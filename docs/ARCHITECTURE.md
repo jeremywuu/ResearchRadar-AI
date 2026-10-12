@@ -318,8 +318,10 @@ timestamps.
 
 ## Scheduling design
 
-The future GitHub Actions workflow will define three independent jobs: `scan-phd`, `scan-jobs`,
-and `scan-events`, followed by an always-run summary job. The proposed weekly trigger is:
+`.github/workflows/weekly-monitoring.yml` separates offline validation from the authenticated
+read-only monitoring job. The collection service still isolates the jobs, PhD, and events
+pipelines so one source or category failure does not stop sibling processing. The weekly trigger
+is:
 
 ```yaml
 schedule:
@@ -327,14 +329,29 @@ schedule:
     timezone: "Europe/Brussels"
 ```
 
-`workflow_dispatch` will provide manual execution. A daily mode changes the cron expression to
-`0 9 * * *`. The workflow file will be the schedule's single source of truth.
+`workflow_dispatch` provides manual execution. A daily mode changes the cron expression to
+`0 9 * * *`. The workflow file is the schedule's single source of truth. Concurrency prevents two
+runs for the same ref, job timeouts bound cost, and no workflow command contains `--apply`.
+
+`run_weekly_monitor` collects all six implemented adapters, builds an incremental Sheets dry-run,
+and renders a private Markdown brief without feedback notes. It treats `SUCCESS_NO_MATCHES` as a
+healthy source outcome and reports blocked or failed sources without converting them into closed
+opportunities.
+
+GitHub-hosted runners do not retain ignored local snapshots. When a complete state directory is
+available, the existing fresh-observation reconciler preserves history. Without it, the weekly run
+still produces a current snapshot and Sheets preview but explicitly disables authoritative
+cross-run change counts. Fourteen-day Actions artifacts are review outputs, not durable state. A
+private versioned GCS bucket with lifecycle and generation preconditions is the recommended future
+backend; it is not provisioned or used yet.
 
 ## Security
 
-- Secrets are supplied through environment variables locally and GitHub Secrets later.
+- Secrets are supplied through environment variables locally. GitHub uses OIDC and WIF rather
+  than a stored Google credential.
 - `.env`, credentials, tokens, private keys, local data, and logs are ignored by Git.
 - Logs must not include credentials or raw secret-bearing responses.
 - Ordinary tests inject mock services and require no Google credentials or network access.
-- Future GitHub Actions authentication will use Workload Identity Federation rather than
-  committed service-account keys.
+- GitHub Actions authentication uses Workload Identity Federation through a dedicated service
+  account shared on LIVE PILOT as Viewer. The workflow requests the Sheets read-only OAuth scope;
+  local Mac OAuth behavior remains unchanged.

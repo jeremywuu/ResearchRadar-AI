@@ -27,6 +27,7 @@ client_secret*.json
 *oauth*credentials*.json
 service-account*.json
 token*.json
+gha-creds-*.json
 secrets*.yaml
 secrets*.yml
 

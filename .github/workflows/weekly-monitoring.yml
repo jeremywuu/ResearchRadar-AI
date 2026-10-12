@@ -1,0 +1,96 @@
+name: ResearchRadar Weekly Monitoring
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+      timezone: "Europe/Brussels"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-radar-weekly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Offline validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install project
+        run: python -m pip install -e ".[dev]"
+      - name: Validate configuration and tests
+        run: |
+          research-radar validate-config
+          pytest -q
+          ruff check .
+          ruff format --check .
+
+  monitor:
+    name: Read-only official-source monitoring
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: live-pilot-read-only
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GOOGLE_LIVE_PILOT_SPREADSHEET_ID: ${{ vars.GOOGLE_LIVE_PILOT_SPREADSHEET_ID }}
+      RESEARCH_RADAR_SHEETS_ENV: live-pilot
+      RESEARCH_RADAR_DATA_MODE: live
+      RESEARCH_RADAR_GOOGLE_READ_ONLY: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate cloud configuration
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          WIF_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          test -n "$WIF_PROVIDER"
+          test -n "$WIF_SERVICE_ACCOUNT"
+          test -n "$GOOGLE_LIVE_PILOT_SPREADSHEET_ID"
+      - id: auth
+        name: Authenticate to Google Cloud with OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install project with Sheets support
+        run: python -m pip install -e ".[sheets]"
+      - id: weekly
+        name: Collect and prepare read-only weekly plan
+        run: |
+          research-radar weekly-run \
+            --live \
+            --project-root . \
+            --state-dir data/automation/state/live \
+            --output-dir data/automation/run \
+            --reference-date "$(date -u +%F)"
+      - name: Publish job summary
+        if: always() && hashFiles('data/automation/run/researchradar_weekly_brief.md') != ''
+        run: cat data/automation/run/researchradar_weekly_brief.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload private review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: researchradar-weekly-${{ github.run_id }}
+          path: |
+            data/automation/run/researchradar_weekly_brief.md
+            data/automation/run/current/
+            data/automation/run/sheets-review/
+          if-no-files-found: warn
+          retention-days: 14

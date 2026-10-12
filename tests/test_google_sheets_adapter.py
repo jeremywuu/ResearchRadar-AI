@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from research_radar.storage.google_auth import (
+    SHEETS_READ_ONLY_SCOPES,
     DefaultGoogleCredentialsProvider,
     SheetsAuthenticationError,
 )
@@ -127,6 +128,30 @@ def test_authentication_failure_does_not_expose_credential_paths(
         provider.get_credentials()
 
     assert str(secret_path) not in str(caught.value)
+
+
+def test_cloud_read_only_mode_requests_read_only_sheets_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested: list[tuple[str, ...]] = []
+    credentials = object()
+    provider = DefaultGoogleCredentialsProvider(
+        environment={"RESEARCH_RADAR_GOOGLE_READ_ONLY": "1"}
+    )
+    libraries = type(
+        "Libraries",
+        (),
+        {
+            "adc": staticmethod(
+                lambda *, scopes: (requested.append(tuple(scopes)) or credentials, None)
+            ),
+            "default_credentials_error": RuntimeError,
+        },
+    )()
+    monkeypatch.setattr(provider, "_load_official_libraries", lambda: libraries)
+
+    assert provider.get_credentials() is credentials
+    assert requested == [SHEETS_READ_ONLY_SCOPES]
 
 
 def test_adapter_reads_rows_with_the_declared_headers() -> None:

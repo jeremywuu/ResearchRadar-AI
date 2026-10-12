@@ -363,11 +363,25 @@ Status: complete; only the separately approved LIVE PILOT score cells were writt
 - Retain controlled exploratory results.
 - Record paid-call usage and enforce budgets.
 
+## Milestone 5A — GitHub Actions weekly automation infrastructure
+
+Status: locally implemented; no GitHub repository, cloud identity, or hosted run has been created.
+
+- Add Monday 09:00 Europe/Brussels scheduling plus manual dispatch.
+- Separate offline tests from authenticated, read-only source collection and Sheets planning.
+- Use OIDC/WIF-compatible ADC with the Sheets read-only scope while preserving local OAuth.
+- Generate a Markdown brief, job summary, and private 14-day review artifact.
+- Isolate source failures, bound runtime, prevent concurrent runs, and omit every Sheets apply path.
+- Explicitly report missing durable state rather than fabricating cross-run change history.
+
+Acceptance requires local workflow/schema tests, pytest, Ruff, configuration validation, and a
+manual review of the workflow before any repository or Google Cloud setup.
+
 ## Milestone 6 — Automation and reliability
 
-- Add weekly, daily, and manual GitHub Actions modes.
-- Run all three categories independently on scheduled scans.
-- Add retry, timeout, run summary, cost, and failure reporting.
+- Add an approved durable snapshot backend before claiming reliable hosted change detection.
+- Verify the first private GitHub-hosted read-only run and measure actual usage.
+- Consider daily mode only after weekly reliability and cost are understood.
 
 ## Later phases
 
