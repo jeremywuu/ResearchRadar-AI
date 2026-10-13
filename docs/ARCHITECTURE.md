@@ -320,8 +320,8 @@ timestamps.
 
 `.github/workflows/weekly-monitoring.yml` separates offline validation from the authenticated
 read-only monitoring job. The collection service still isolates the jobs, PhD, and events
-pipelines so one source or category failure does not stop sibling processing. The weekly trigger
-is:
+pipelines so one source or category failure does not stop sibling processing. The intended weekly
+trigger, currently disabled during the first private-repository deployment, is:
 
 ```yaml
 schedule:
@@ -329,9 +329,16 @@ schedule:
     timezone: "Europe/Brussels"
 ```
 
-`workflow_dispatch` provides manual execution. A daily mode changes the cron expression to
-`0 9 * * *`. The workflow file is the schedule's single source of truth. Concurrency prevents two
-runs for the same ref, job timeouts bound cost, and no workflow command contains `--apply`.
+The deployed workflow currently keeps only `workflow_dispatch` until OIDC/WIF and the first hosted
+read-only run are verified. A future daily mode changes the cron expression to `0 9 * * *`. The
+workflow file is the schedule's single source of truth. Concurrency prevents two runs for the same
+ref, job timeouts bound cost, and no workflow command contains `--apply`.
+
+Private-repository GitHub Free compatibility avoids GitHub Environment dependencies. The workflow
+reads non-secret repository variables and checks the exact repository, `main` ref, and workflow
+path before OIDC authentication. Google WIF must enforce the same repository, ref, and
+`job_workflow_ref` claims; this preserves least privilege without environment claims or long-lived
+keys.
 
 `run_weekly_monitor` collects all six implemented adapters, builds an incremental Sheets dry-run,
 and renders a private Markdown brief without feedback notes. It treats `SUCCESS_NO_MATCHES` as a

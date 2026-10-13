@@ -377,6 +377,16 @@ Status: locally implemented; no GitHub repository, cloud identity, or hosted run
 Acceptance requires local workflow/schema tests, pytest, Ruff, configuration validation, and a
 manual review of the workflow before any repository or Google Cloud setup.
 
+## Milestone 5B.1 — Secure repository deployment
+
+Status: locally prepared; first private push requires final security checks.
+
+- Keep the first deployed workflow manual-only while WIF is unconfigured.
+- Use GitHub Free-compatible repository variables rather than private-repository Environments.
+- Bind future OIDC trust to the exact repository, `main` branch, and workflow file.
+- Audit tracked files and complete Git history before configuring the sole approved remote.
+- Push only to `jeremywuu/ResearchRadar-AI` after confirming that it exists, is private, and empty.
+
 ## Milestone 6 — Automation and reliability
 
 - Add an approved durable snapshot backend before claiming reliable hosted change detection.

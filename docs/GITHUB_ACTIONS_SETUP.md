@@ -5,18 +5,24 @@ This guide prepares the private-repository, read-only cloud pilot implemented by
 or create any Google Cloud resources.
 
 Platform behavior and allowances were checked against the linked official documentation on
-2026-10-12. Recheck them before provisioning because action versions, quotas, and billing terms can
+2026-10-13. Recheck them before provisioning because action versions, quotas, and billing terms can
 change.
 
 ## 1. Private repository preparation
 
 1. Create a private GitHub repository only after separate authorization.
 2. Push the default branch containing this workflow.
-3. In **Settings → Environments**, create `live-pilot-read-only`.
-4. Restrict deployment branches to the trusted default branch. Do not add required reviewers if
-   Monday runs must remain unattended.
-5. In **Settings → Actions → General**, allow the official actions used by the workflow.
-6. Set a spending budget or disable paid overages as appropriate for the account.
+3. In **Settings → Secrets and variables → Actions → Variables**, use repository variables for
+   the three non-secret configuration values listed below.
+4. In **Settings → Actions → General**, allow the official actions used by the workflow.
+5. Set a spending budget or disable paid overages as appropriate for the account.
+
+The initial deployment is compatible with a private repository on GitHub Free and therefore does
+not use a GitHub Environment. GitHub currently requires Pro, Team, or Enterprise for environment
+secrets, environment variables, and deployment-branch controls in private repositories. The WIF
+condition and an in-workflow preflight instead restrict the identity to the exact repository,
+`main` branch, and workflow file. Recheck GitHub's official environment documentation before
+changing this design.
 
 The workflow itself grants `contents: read`; only the monitoring job receives `id-token: write`,
 which is required to request a GitHub OIDC token. It never receives `contents: write`.
@@ -34,10 +40,16 @@ The workflow has two jobs:
 The workflow-level concurrency group permits only one active monitoring run for a given ref.
 Jobs have 15- and 35-minute limits. There is no `--apply` command in the workflow.
 
-## 3. Schedule and manual execution
+## 3. Manual execution and deferred schedule
 
-GitHub now supports an IANA `timezone` on scheduled workflows. The configured schedule is Monday
-09:00 in Brussels, including daylight-saving transitions:
+The first deployment is deliberately manual-only while Google WIF is unconfigured:
+
+```yaml
+workflow_dispatch:
+```
+
+After WIF and the first hosted read-only smoke test are approved, restore this documented schedule
+under `on`:
 
 ```yaml
 schedule:
@@ -46,10 +58,12 @@ schedule:
 workflow_dispatch:
 ```
 
-Scheduled workflows run from the latest commit on the default branch. See the official
-[workflow syntax documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
-To run manually, open **Actions → ResearchRadar Weekly Monitoring → Run workflow** and select the
-trusted branch.
+GitHub supports an IANA `timezone` on scheduled workflows, so this represents Monday 09:00 in
+Brussels across daylight-saving transitions. Scheduled workflows run from the latest commit on
+the default branch. See the official [workflow syntax documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+For the initial pilot, open **Actions → ResearchRadar Weekly Monitoring → Run workflow** and select
+`main`; the workflow refuses Google authentication from another repository, branch, or workflow
+path.
 
 ## 4. Google Workload Identity Federation
 
@@ -68,14 +82,14 @@ Complete these steps manually in a dedicated Google Cloud project:
 3. Create a Workload Identity Pool and GitHub OIDC provider with issuer
    `https://token.actions.githubusercontent.com/`.
 4. Map at least `google.subject=assertion.sub`, `attribute.repository=assertion.repository`,
-   `attribute.ref=assertion.ref`, and `attribute.environment=assertion.environment`.
-5. Add an attribute condition for the exact repository, trusted branch, and environment, for
-   example:
+   `attribute.ref=assertion.ref`, and
+   `attribute.job_workflow_ref=assertion.job_workflow_ref`.
+5. Add an attribute condition for the exact repository, trusted branch, and workflow file:
 
 ```text
-assertion.repository=='OWNER/REPOSITORY' &&
+assertion.repository=='jeremywuu/ResearchRadar-AI' &&
 assertion.ref=='refs/heads/main' &&
-assertion.environment=='live-pilot-read-only'
+assertion.job_workflow_ref=='jeremywuu/ResearchRadar-AI/.github/workflows/weekly-monitoring.yml@refs/heads/main'
 ```
 
 For repositories using GitHub's immutable OIDC subjects, also verify the repository and owner IDs
@@ -94,9 +108,10 @@ No project-wide Google Sheets IAM role is required. Spreadsheet access is constr
 file's Viewer sharing permission, and the workflow additionally requests the
 `spreadsheets.readonly` OAuth scope.
 
-## 5. GitHub environment variables
+## 5. GitHub repository variables
 
-Add these as variables on the `live-pilot-read-only` GitHub environment:
+Add these as repository-level Actions variables under **Settings → Secrets and variables →
+Actions → Variables**. They identify resources but are not credentials:
 
 | Variable | Value |
 |---|---|

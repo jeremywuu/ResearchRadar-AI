@@ -1,9 +1,6 @@
 name: ResearchRadar Weekly Monitoring
 
 on:
-  schedule:
-    - cron: "0 9 * * 1"
-      timezone: "Europe/Brussels"
   workflow_dispatch:
 
 permissions:
@@ -38,7 +35,6 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    environment: live-pilot-read-only
     permissions:
       contents: read
       id-token: write
@@ -54,6 +50,9 @@ jobs:
           WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           WIF_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
         run: |
+          test "$GITHUB_REPOSITORY" = "jeremywuu/ResearchRadar-AI"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_WORKFLOW_REF" = "jeremywuu/ResearchRadar-AI/.github/workflows/weekly-monitoring.yml@refs/heads/main"
           test -n "$WIF_PROVIDER"
           test -n "$WIF_SERVICE_ACCOUNT"
           test -n "$GOOGLE_LIVE_PILOT_SPREADSHEET_ID"

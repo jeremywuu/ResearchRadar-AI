@@ -203,23 +203,33 @@ def test_weekly_records_keep_stable_ids_without_durable_state(tmp_path: Path) ->
     assert first_id == second_id
 
 
-def test_weekly_workflow_is_timezone_aware_manual_and_read_only() -> None:
+def test_weekly_workflow_is_manual_only_free_compatible_and_read_only() -> None:
     workflow_path = ROOT / ".github" / "workflows" / "weekly-monitoring.yml"
     workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     triggers = workflow["on"]
-    schedule = triggers["schedule"][0]
     monitor = workflow["jobs"]["monitor"]
     workflow_text = workflow_path.read_text(encoding="utf-8")
 
-    assert schedule == {"cron": "0 9 * * 1", "timezone": "Europe/Brussels"}
-    assert "workflow_dispatch" in triggers
+    assert triggers == {"workflow_dispatch": ""}
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     assert workflow["jobs"]["test"]["timeout-minutes"] == "15"
     assert monitor["timeout-minutes"] == "35"
     assert monitor["permissions"] == {"contents": "read", "id-token": "write"}
+    assert "environment" not in monitor
     assert monitor["env"]["RESEARCH_RADAR_SHEETS_ENV"] == "live-pilot"
     assert monitor["env"]["RESEARCH_RADAR_DATA_MODE"] == "live"
     assert monitor["env"]["RESEARCH_RADAR_GOOGLE_READ_ONLY"] == "1"
     assert "--apply" not in workflow_text
     assert "GOOGLE_SPREADSHEET_ID" not in workflow_text
+    assert "jeremywuu/ResearchRadar-AI" in workflow_text
+    assert "refs/heads/main" in workflow_text
+    assert "weekly-monitoring.yml@refs/heads/main" in workflow_text
     assert monitor["steps"][-1]["with"]["retention-days"] == "14"
+
+
+def test_deferred_weekly_schedule_remains_documented() -> None:
+    setup_guide = (ROOT / "docs" / "GITHUB_ACTIONS_SETUP.md").read_text(encoding="utf-8")
+
+    assert 'cron: "0 9 * * 1"' in setup_guide
+    assert 'timezone: "Europe/Brussels"' in setup_guide
+    assert "first deployment is deliberately manual-only" in setup_guide
