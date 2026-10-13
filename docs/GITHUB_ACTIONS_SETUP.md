@@ -73,6 +73,10 @@ key. The official [`google-github-actions/auth`](https://github.com/google-githu
 action exports an Application Default Credentials file, which the existing Python authentication
 provider discovers before the local OAuth fallback.
 
+The project-specific, preflight-verified commands and immutable GitHub IDs are documented in
+[`GOOGLE_WIF_SETUP.md`](GOOGLE_WIF_SETUP.md). Treat that file as the approval plan for Milestone
+5B.2; the generic steps below are supporting context.
+
 Complete these steps manually in a dedicated Google Cloud project:
 
 1. Enable the Google Sheets API, IAM Service Account Credentials API, and Security Token Service
@@ -82,18 +86,21 @@ Complete these steps manually in a dedicated Google Cloud project:
 3. Create a Workload Identity Pool and GitHub OIDC provider with issuer
    `https://token.actions.githubusercontent.com/`.
 4. Map at least `google.subject=assertion.sub`, `attribute.repository=assertion.repository`,
-   `attribute.ref=assertion.ref`, and
-   `attribute.job_workflow_ref=assertion.job_workflow_ref`.
+   `attribute.repository_id=assertion.repository_id`,
+   `attribute.repository_owner_id=assertion.repository_owner_id`,
+   `attribute.ref=assertion.ref`, and `attribute.workflow_ref=assertion.workflow_ref`.
 5. Add an attribute condition for the exact repository, trusted branch, and workflow file:
 
 ```text
-assertion.repository=='jeremywuu/ResearchRadar-AI' &&
-assertion.ref=='refs/heads/main' &&
-assertion.job_workflow_ref=='jeremywuu/ResearchRadar-AI/.github/workflows/weekly-monitoring.yml@refs/heads/main'
+attribute.repository_id=='1416626708' &&
+attribute.repository_owner_id=='213313923' &&
+attribute.ref=='refs/heads/main' &&
+attribute.workflow_ref=='jeremywuu/ResearchRadar-AI/.github/workflows/weekly-monitoring.yml@refs/heads/main'
 ```
 
-For repositories using GitHub's immutable OIDC subjects, also verify the repository and owner IDs
-shown in the token. GitHub documents the claim formats in its
+The numeric repository and owner IDs are the primary trust anchors. `workflow_ref` identifies this
+ordinary monitoring workflow; `job_workflow_ref` is associated with reusable workflows. GitHub
+documents the claim formats in its
 [OIDC reference](https://docs.github.com/en/actions/reference/security/oidc). Google recommends
 tenant/repository restrictions to prevent confused-deputy access in its
 [deployment-pipeline WIF guide](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines).
@@ -185,7 +192,8 @@ this milestone and would require a separate cost review before activation.
 
 - **Missing provider or service account:** set all three environment variables above.
 - **OIDC permission denied:** verify `id-token: write`, the full provider resource name, attribute
-  mappings, repository/ref/environment conditions, and `roles/iam.workloadIdentityUser`.
+  mappings, numeric repository/owner IDs, ref/workflow conditions, and
+  `roles/iam.workloadIdentityUser`.
 - **Spreadsheet 403:** share only LIVE PILOT with the service-account email as Viewer and confirm
   the Sheets API is enabled.
 - **Workbook identity failure:** confirm the ID and exact title `ResearchRadar AI — LIVE PILOT`.

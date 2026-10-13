@@ -233,3 +233,16 @@ def test_deferred_weekly_schedule_remains_documented() -> None:
     assert 'cron: "0 9 * * 1"' in setup_guide
     assert 'timezone: "Europe/Brussels"' in setup_guide
     assert "first deployment is deliberately manual-only" in setup_guide
+
+
+def test_wif_plan_uses_numeric_ids_and_exact_workflow_claim() -> None:
+    plan = (ROOT / "docs" / "GOOGLE_WIF_SETUP.md").read_text(encoding="utf-8")
+
+    assert "attribute.repository_id=='1416626708'" in plan
+    assert "attribute.repository_owner_id=='213313923'" in plan
+    assert "attribute.ref=='refs/heads/main'" in plan
+    assert "attribute.workflow_ref=='jeremywuu/ResearchRadar-AI/.github/workflows/" in plan
+    assert "attribute.job_workflow_ref=" not in plan
+    assert "roles/iam.workloadIdentityUser" in plan
+    assert "researchradar-pool/*" in plan
+    assert "Do not bind" in plan

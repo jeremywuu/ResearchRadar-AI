@@ -365,7 +365,8 @@ Status: complete; only the separately approved LIVE PILOT score cells were writt
 
 ## Milestone 5A — GitHub Actions weekly automation infrastructure
 
-Status: locally implemented; no GitHub repository, cloud identity, or hosted run has been created.
+Status: complete; the private repository is deployed with manual dispatch only. No cloud identity
+or hosted run has been created.
 
 - Add Monday 09:00 Europe/Brussels scheduling plus manual dispatch.
 - Separate offline tests from authenticated, read-only source collection and Sheets planning.
@@ -379,13 +380,26 @@ manual review of the workflow before any repository or Google Cloud setup.
 
 ## Milestone 5B.1 — Secure repository deployment
 
-Status: locally prepared; first private push requires final security checks.
+Status: complete; the audited history is on private `jeremywuu/ResearchRadar-AI` at `main`.
 
 - Keep the first deployed workflow manual-only while WIF is unconfigured.
 - Use GitHub Free-compatible repository variables rather than private-repository Environments.
 - Bind future OIDC trust to the exact repository, `main` branch, and workflow file.
 - Audit tracked files and complete Git history before configuring the sole approved remote.
 - Push only to `jeremywuu/ResearchRadar-AI` after confirming that it exists, is private, and empty.
+
+## Milestone 5B.2 — Google Cloud WIF preflight
+
+Status: preflight and exact setup plan complete; resource creation awaits explicit approval.
+
+- Reuse project `researchradar-ai` and record its verified project number.
+- Anchor trust to immutable GitHub repository and owner IDs plus the exact `main` ref and
+  `workflow_ref` claim.
+- Create no persistent key and grant only repository-scoped `roles/iam.workloadIdentityUser` on a
+  dedicated service account.
+- Share only LIVE PILOT as Viewer and retain the Sheets read-only OAuth scope.
+- Keep the workflow manual-only and perform no cloud, IAM, Sheets, or GitHub Actions mutation
+  during preflight.
 
 ## Milestone 6 — Automation and reliability
 
