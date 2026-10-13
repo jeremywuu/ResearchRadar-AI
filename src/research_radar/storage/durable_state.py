@@ -12,8 +12,9 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol
 
-STATE_SCHEMA_VERSION = 1
+STATE_SCHEMA_VERSION = 2
 SNAPSHOT_FILES = ("jobs.json", "phd.json", "events.json", "source_metadata.json")
+RECOVERY_HISTORY_LIMIT = 32
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
@@ -27,6 +28,10 @@ class StateConflictError(DurableStateError):
 
 class StateSchemaError(DurableStateError):
     """Raised when a snapshot uses an unsupported schema."""
+
+
+class StatePermissionError(DurableStateError):
+    """Raised when the configured state identity lacks a required permission."""
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,7 @@ class StateCommitRequest:
     preference_configuration_hash: str
     source_health: Mapping[str, str]
     bootstrap: bool = False
+    base_snapshot_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +152,7 @@ def _manifest(
         "preference_configuration_hash": request.preference_configuration_hash,
         "source_health": dict(sorted(request.source_health.items())),
         "record_counts": record_counts,
+        "records": _record_inventory(payloads),
         "state_checksum": state_checksum,
         "files": files,
     }
@@ -170,6 +177,34 @@ def _validate_manifest(manifest: dict[str, Any], payloads: Mapping[str, bytes]) 
     ).hexdigest()
     if manifest.get("state_checksum") != expected_state:
         raise DurableStateError("state checksum mismatch")
+    if manifest.get("records") != _record_inventory(payloads):
+        raise DurableStateError("state manifest record inventory mismatch")
+
+
+def _record_inventory(payloads: Mapping[str, bytes]) -> list[dict[str, Any]]:
+    inventory: list[dict[str, Any]] = []
+    for name, data in payloads.items():
+        if name == "source_metadata.json":
+            continue
+        category = name.removesuffix(".json")
+        for record in _read_json_bytes(data, name).get("records", []):
+            opportunity = record["opportunity"]
+            inventory.append(
+                {
+                    "record_id": opportunity["opportunity_id"],
+                    "category": category,
+                    "adapter_source_id": opportunity.get("adapter_source_id"),
+                    "official_source_url": opportunity.get("official_source_url")
+                    or opportunity.get("source_url"),
+                    "source_verification_status": opportunity.get("source_verification_status"),
+                    "first_seen_at": opportunity.get("first_seen_at"),
+                    "last_seen_at": opportunity.get("last_seen_at"),
+                    "content_updated_at": opportunity.get("content_updated_at"),
+                    "source_retrieved_at": opportunity.get("source_retrieved_at")
+                    or opportunity.get("retrieved_at"),
+                }
+            )
+    return sorted(inventory, key=lambda item: (item["category"], item["record_id"]))
 
 
 def _write_restored(target_dir: Path, payloads: Mapping[str, bytes]) -> None:
@@ -177,6 +212,26 @@ def _write_restored(target_dir: Path, payloads: Mapping[str, bytes]) -> None:
     for name, data in payloads.items():
         (target_dir / name).write_bytes(data)
     _snapshot_payloads(target_dir)
+
+
+def _snapshot_candidates(pointer: Mapping[str, Any]) -> tuple[str, ...]:
+    current = pointer.get("snapshot_id")
+    if not isinstance(current, str) or not current:
+        raise DurableStateError("current pointer has no valid snapshot_id")
+    values = [current, pointer.get("previous_snapshot_id")]
+    history = pointer.get("fallback_snapshot_ids", [])
+    if history is not None and not isinstance(history, list):
+        raise DurableStateError("current pointer has invalid recovery history")
+    values.extend(history or [])
+    result: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        if not isinstance(value, str) or not value:
+            raise DurableStateError("current pointer has an invalid recovery snapshot ID")
+        if value not in result:
+            result.append(value)
+    return tuple(result)
 
 
 class LocalFilesystemStateBackend:
@@ -192,20 +247,29 @@ class LocalFilesystemStateBackend:
         pointer_bytes = pointer_path.read_bytes()
         pointer = _read_json_bytes(pointer_bytes, "current.json")
         generation = sha256(pointer_bytes).hexdigest()
-        current = pointer.get("snapshot_id")
-        previous = pointer.get("previous_snapshot_id")
-        try:
-            restored = self._restore_snapshot(
-                str(current),
-                target_dir,
-                expected_manifest_sha256=pointer.get("manifest_sha256"),
-            )
-            return StateRestoreResult(True, restored, generation)
-        except DurableStateError:
-            if not isinstance(previous, str) or not previous:
+        candidates = _snapshot_candidates(pointer)
+        current = candidates[0]
+        failures: list[DurableStateError] = []
+        for snapshot_id in candidates:
+            try:
+                restored = self._restore_snapshot(
+                    snapshot_id,
+                    target_dir,
+                    expected_manifest_sha256=(
+                        pointer.get("manifest_sha256") if snapshot_id == current else None
+                    ),
+                )
+                return StateRestoreResult(
+                    True,
+                    restored,
+                    generation,
+                    current if snapshot_id != current else None,
+                )
+            except StatePermissionError:
                 raise
-            restored = self._restore_snapshot(previous, target_dir)
-            return StateRestoreResult(True, restored, generation, str(current))
+            except DurableStateError as exc:
+                failures.append(exc)
+        raise failures[-1]
 
     def _restore_snapshot(
         self,
@@ -256,7 +320,7 @@ class LocalFilesystemStateBackend:
             pointer, actual_generation = self._current_pointer()
             if actual_generation != expected_current_generation:
                 raise StateConflictError("current state changed after restoration")
-            previous = pointer.get("snapshot_id") if pointer else None
+            previous = _commit_base_snapshot(pointer, request)
             if previous is None and not request.bootstrap:
                 raise DurableStateError("initial state commit must be explicitly marked bootstrap")
             snapshot_id = request.run_id
@@ -275,6 +339,9 @@ class LocalFilesystemStateBackend:
                 "schema_version": STATE_SCHEMA_VERSION,
                 "snapshot_id": snapshot_id,
                 "previous_snapshot_id": previous,
+                "fallback_snapshot_ids": (
+                    list(_snapshot_candidates(pointer))[:RECOVERY_HISTORY_LIMIT] if pointer else []
+                ),
                 "manifest_sha256": sha256(_canonical_bytes(manifest)).hexdigest(),
             }
             temporary = self.root / f".current.{snapshot_id}.tmp"
@@ -326,26 +393,42 @@ class GoogleCloudStorageStateBackend:
 
     def restore(self, target_dir: Path) -> StateRestoreResult:
         pointer_blob = self.bucket.blob(f"{self.prefix}/current.json")
-        if not pointer_blob.exists():
-            return StateRestoreResult(available=False)
-        pointer_bytes = pointer_blob.download_as_bytes()
-        pointer_blob.reload()
-        pointer = _read_json_bytes(pointer_bytes, "GCS current.json")
-        generation = int(pointer_blob.generation)
-        current = str(pointer.get("snapshot_id") or "")
-        previous = pointer.get("previous_snapshot_id")
         try:
-            restored = self._restore_snapshot(
-                current,
-                target_dir,
-                expected_manifest_sha256=pointer.get("manifest_sha256"),
-            )
-            return StateRestoreResult(True, restored, generation)
-        except DurableStateError:
-            if not isinstance(previous, str) or not previous:
+            if not pointer_blob.exists():
+                return StateRestoreResult(available=False)
+            pointer_blob.reload()
+            generation = int(pointer_blob.generation)
+            pointer_bytes = pointer_blob.download_as_bytes(if_generation_match=generation)
+        except Exception as exc:
+            if _is_precondition_failure(exc):
+                raise StateConflictError("GCS current pointer changed during restoration") from exc
+            if _is_permission_denied(exc):
+                raise StatePermissionError("permission denied while reading GCS state") from exc
+            raise
+        pointer = _read_json_bytes(pointer_bytes, "GCS current.json")
+        candidates = _snapshot_candidates(pointer)
+        current = candidates[0]
+        failures: list[DurableStateError] = []
+        for snapshot_id in candidates:
+            try:
+                restored = self._restore_snapshot(
+                    snapshot_id,
+                    target_dir,
+                    expected_manifest_sha256=(
+                        pointer.get("manifest_sha256") if snapshot_id == current else None
+                    ),
+                )
+                return StateRestoreResult(
+                    True,
+                    restored,
+                    generation,
+                    current if snapshot_id != current else None,
+                )
+            except StatePermissionError:
                 raise
-            restored = self._restore_snapshot(previous, target_dir)
-            return StateRestoreResult(True, restored, generation, current)
+            except DurableStateError as exc:
+                failures.append(exc)
+        raise failures[-1]
 
     def _restore_snapshot(
         self,
@@ -354,10 +437,25 @@ class GoogleCloudStorageStateBackend:
         *,
         expected_manifest_sha256: object | None = None,
     ) -> str:
-        manifest = _read_json_bytes(
-            self.bucket.blob(f"{self.prefix}/commits/{snapshot_id}.json").download_as_bytes(),
-            f"GCS manifest {snapshot_id}",
-        )
+        try:
+            manifest = _read_json_bytes(
+                self.bucket.blob(f"{self.prefix}/commits/{snapshot_id}.json").download_as_bytes(),
+                f"GCS manifest {snapshot_id}",
+            )
+            payloads = {
+                name: self.bucket.blob(
+                    f"{self.prefix}/snapshots/{snapshot_id}/{name}"
+                ).download_as_bytes()
+                for name in SNAPSHOT_FILES
+            }
+        except DurableStateError:
+            raise
+        except Exception as exc:
+            if _is_not_found(exc):
+                raise DurableStateError(f"incomplete GCS snapshot: {snapshot_id}") from exc
+            if _is_permission_denied(exc):
+                raise StatePermissionError("permission denied while reading GCS state") from exc
+            raise
         if manifest.get("schema_version") != STATE_SCHEMA_VERSION:
             raise StateSchemaError(
                 f"unsupported state schema version: {manifest.get('schema_version')}"
@@ -367,12 +465,6 @@ class GoogleCloudStorageStateBackend:
             and expected_manifest_sha256 != sha256(_canonical_bytes(manifest)).hexdigest()
         ):
             raise DurableStateError(f"manifest pointer mismatch for {snapshot_id}")
-        payloads = {
-            name: self.bucket.blob(
-                f"{self.prefix}/snapshots/{snapshot_id}/{name}"
-            ).download_as_bytes()
-            for name in SNAPSHOT_FILES
-        }
         _validate_manifest(manifest, payloads)
         _write_restored(target_dir, payloads)
         return snapshot_id
@@ -386,12 +478,27 @@ class GoogleCloudStorageStateBackend:
     ) -> StateCommitResult:
         _validate_request(request)
         pointer_blob = self.bucket.blob(f"{self.prefix}/current.json")
+        pointer: dict[str, Any] | None = None
         previous = None
         if expected_current_generation is not None:
-            pointer = _read_json_bytes(pointer_blob.download_as_bytes(), "GCS current.json")
-            previous = pointer.get("snapshot_id")
-        elif not request.bootstrap:
-            raise DurableStateError("initial state commit must be explicitly marked bootstrap")
+            try:
+                pointer = _read_json_bytes(
+                    pointer_blob.download_as_bytes(
+                        if_generation_match=int(expected_current_generation)
+                    ),
+                    "GCS current.json",
+                )
+                previous = _commit_base_snapshot(pointer, request)
+            except Exception as exc:
+                if _is_precondition_failure(exc):
+                    raise StateConflictError("GCS current pointer changed after restore") from exc
+                if _is_permission_denied(exc):
+                    raise StatePermissionError("permission denied while reading GCS state") from exc
+                raise
+        else:
+            previous = _commit_base_snapshot(None, request)
+            if not request.bootstrap:
+                raise DurableStateError("initial state commit must be explicitly marked bootstrap")
         payloads = _snapshot_payloads(snapshot_dir)
         manifest = _manifest(request.run_id, payloads, request, previous)
         try:
@@ -406,6 +513,9 @@ class GoogleCloudStorageStateBackend:
                 "schema_version": STATE_SCHEMA_VERSION,
                 "snapshot_id": request.run_id,
                 "previous_snapshot_id": previous,
+                "fallback_snapshot_ids": (
+                    list(_snapshot_candidates(pointer))[:RECOVERY_HISTORY_LIMIT] if pointer else []
+                ),
                 "manifest_sha256": sha256(_canonical_bytes(manifest)).hexdigest(),
             }
             pointer_blob.upload_from_string(
@@ -417,6 +527,12 @@ class GoogleCloudStorageStateBackend:
         except Exception as exc:
             if _is_precondition_failure(exc):
                 raise StateConflictError("GCS generation precondition failed") from exc
+            if _is_permission_denied(exc):
+                raise StatePermissionError(
+                    "permission denied while committing GCS state; replacing current.json "
+                    "requires storage.objects.create and conditionally scoped "
+                    "storage.objects.delete"
+                ) from exc
             raise
         return StateCommitResult(
             request.run_id,
@@ -433,6 +549,23 @@ def _validate_request(request: StateCommitRequest) -> None:
         raise DurableStateError("committed_at must be timezone-aware")
     if not request.preference_configuration_hash:
         raise DurableStateError("preference configuration hash is required")
+    if request.base_snapshot_id is not None and not _SAFE_ID.fullmatch(request.base_snapshot_id):
+        raise DurableStateError("base_snapshot_id must be a safe snapshot identifier")
+
+
+def _commit_base_snapshot(
+    pointer: Mapping[str, Any] | None, request: StateCommitRequest
+) -> str | None:
+    if pointer is None:
+        if request.base_snapshot_id is not None:
+            raise StateConflictError("base snapshot was provided without a current state")
+        return None
+    candidates = _snapshot_candidates(pointer)
+    if request.base_snapshot_id is None:
+        return candidates[0]
+    if request.base_snapshot_id not in candidates:
+        raise StateConflictError("restored base snapshot is not in current recovery history")
+    return request.base_snapshot_id
 
 
 def _is_precondition_failure(exc: Exception) -> bool:
@@ -440,3 +573,14 @@ def _is_precondition_failure(exc: Exception) -> bool:
         exc.__class__.__name__ in {"PreconditionFailed", "Conflict"}
         or getattr(exc, "code", None) == 412
     )
+
+
+def _is_permission_denied(exc: Exception) -> bool:
+    return (
+        exc.__class__.__name__ in {"Forbidden", "PermissionDenied"}
+        or getattr(exc, "code", None) == 403
+    )
+
+
+def _is_not_found(exc: Exception) -> bool:
+    return exc.__class__.__name__ == "NotFound" or getattr(exc, "code", None) == 404

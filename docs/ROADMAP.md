@@ -408,11 +408,29 @@ Status: locally implemented; GCS provisioning and bootstrap await separate appro
 - Add one immutable snapshot contract with filesystem and GCS adapters.
 - Validate schemas, stable IDs, deterministic serialization, and layered checksums.
 - Commit immutable snapshot objects before a generation-guarded current pointer.
-- Recover from a corrupt latest commit using the previous verified snapshot.
+- Recover from corrupt newer commits using a bounded verified predecessor history.
 - Preserve unavailable-source history and reject unsafe or all-failed state advancement.
 - Keep empty state in explicit bootstrap mode; never auto-upload a first baseline.
 - Correct semantic deadline reporting and isolate accepted counts per source.
 - Keep the deployed workflow stateless until bucket location, IAM, and migration are approved.
+
+## Milestone 5C.1B — GCS security and bootstrap preflight
+
+Status: locally implemented; no GCS resource or IAM grant exists yet.
+
+- Select `europe-west1` Standard with uniform access, enforced public-access prevention, seven-day
+  soft delete, disabled versioning, and no completed-object deletion lifecycle.
+- Correct runtime IAM to prefix-conditioned object get/create plus exact-pointer-conditioned object
+  delete; metadata update and object list are not required.
+- Bind pointer downloads to the observed generation and retain a bounded multi-generation recovery
+  chain.
+- Preserve correct commit lineage after fallback by recording the snapshot actually restored as
+  the new commit's base.
+- Reconcile the 32-record local history, 15 LIVE PILOT records, and first hosted structured
+  artifact into a proposed 33-record schema-v2 bootstrap snapshot.
+- Keep the proposed bootstrap manifest and downloaded cloud evidence in Git-ignored review data.
+- Require separate approval for bucket creation, IAM, bootstrap upload, workflow integration, and
+  every hosted validation run.
 
 ## Milestone 6 — Automation and reliability
 

@@ -238,12 +238,23 @@ record_counts
 state_checksum
 files[name].sha256
 files[name].size
+records[].record_id
+records[].category
+records[].adapter_source_id
+records[].official_source_url
+records[].source_verification_status
+records[].first_seen_at
+records[].last_seen_at
+records[].content_updated_at
+records[].source_retrieved_at
 ```
 
 `current.json` contains `schema_version`, `snapshot_id`, `previous_snapshot_id`, and the canonical
-manifest checksum. Local pointer hashes and GCS object generations are concurrency tokens, not
-domain timestamps. A snapshot is authoritative only after all files and its manifest validate and
-the current pointer is atomically advanced.
+manifest checksum, plus a bounded `fallback_snapshot_ids` recovery list. Local pointer hashes and
+GCS object generations are concurrency tokens, not domain timestamps. A snapshot is authoritative
+only after all files and its manifest validate and the current pointer is atomically advanced. A
+post-recovery commit uses the actually restored snapshot as `previous_snapshot_id`; that ID must
+still occur in the generation-matched pointer history.
 
 ## Official source collection result
 

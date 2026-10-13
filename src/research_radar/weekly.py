@@ -147,6 +147,7 @@ def run_weekly_monitor(
                     source_id: result.health.value
                     for source_id, result in collection.sources.items()
                 },
+                base_snapshot_id=(state_restore.snapshot_id if state_restore is not None else None),
             ),
             expected_current_generation=current_generation,
         )

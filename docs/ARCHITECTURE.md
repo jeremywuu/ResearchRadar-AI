@@ -356,7 +356,9 @@ object before replacing `current.json`. The local adapter uses an exclusive lock
 replace; GCS uses create-only object preconditions and a generation-matched pointer update. A stale
 writer therefore leaves only non-authoritative orphan objects. Restore validates schema, stable-ID
 uniqueness, per-file checksums, whole-state checksum, and pointer-to-manifest integrity, with a
-reported fallback to the previous verified snapshot when the latest commit is corrupt.
+reported fallback through a bounded 32-snapshot recovery history when newer commits are corrupt.
+A subsequent commit records the snapshot actually restored as its base and rejects any base that
+is absent from the generation-matched recovery history.
 
 An empty backend is explicit bootstrap mode and is never auto-committed by a routine weekly run.
 Partial source runs may advance state only when at least one source succeeds and reconciliation is

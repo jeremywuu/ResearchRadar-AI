@@ -43,6 +43,7 @@ source_health
 record_counts
 per-file SHA-256 and byte size
 whole-state SHA-256
+record inventory with stable ID, provenance, and observation timestamps
 ```
 
 Serialization is canonical JSON: keys are sorted, separators are fixed, UTF-8 is retained, and a
@@ -64,11 +65,15 @@ snapshots/<snapshot_id>/source_metadata.json
 ```
 
 Snapshot files and commit manifests are immutable. `current.json` is the only mutable object and
-contains the current snapshot, its predecessor, and the canonical manifest checksum.
+contains the current snapshot, its predecessor, a bounded recovery history, and the canonical
+manifest checksum. State schema version 2 adds the inventory needed to review a bootstrap without
+duplicating full opportunity content in the manifest.
 
 ## Atomic commit protocol
 
-1. Restore `current.json` and retain its local hash or GCS object generation.
+1. Restore `current.json` and retain its local hash or GCS object generation. GCS downloads are
+   guarded by that generation so pointer content cannot be paired with a newer generation during a
+   concurrent write.
 2. Collect and reconcile into a complete temporary snapshot directory.
 3. Validate every file, stable ID, and checksum locally.
 4. Create the four immutable snapshot objects with create-only semantics.
@@ -77,6 +82,8 @@ contains the current snapshot, its predecessor, and the canonical manifest check
 
 Local commits use an exclusive lock file and atomic `os.replace`. GCS commits use
 `ifGenerationMatch=0` for immutable objects and a generation precondition for `current.json`.
+Replacing pointer contents requires `storage.objects.create` and `storage.objects.delete`;
+`storage.objects.update` changes metadata and does not authorize this operation.
 If an upload is interrupted, objects may be orphaned but are not authoritative. If a competing run
 wins the pointer update, the losing run raises a conflict and never replaces the winner. Workflow
 concurrency remains useful for cost control, but correctness does not depend on it.
@@ -85,9 +92,16 @@ concurrency remains useful for cost control, but correctness does not depend on 
 
 At run start the backend reads the current pointer, validates its manifest, validates all file and
 state checksums, verifies the schema, and writes the canonical files to a fresh working directory.
-If the current committed snapshot is corrupt, it attempts the predecessor recorded in the pointer
-and reports which snapshot was rejected. If neither is valid, the run fails visibly; corrupt state
-is never silently accepted.
+If the current committed snapshot is corrupt, restore walks the bounded predecessor list recorded
+in the pointer and reports which current snapshot was rejected. The pointer retains up to 32 known
+committed predecessors. If none is valid, the run fails visibly; corrupt state is never silently
+accepted. Missing GCS objects are integrity failures, while permission failures remain permission
+errors and do not masquerade as corruption.
+
+When a later run commits after recovery, it records the snapshot actually restored as its direct
+base. The backend verifies that this base still belongs to the generation-matched pointer recovery
+history; an unrelated or stale base is a conflict. The rejected newer snapshot remains in the
+fallback inventory for diagnosis, but is not misrepresented as the new snapshot's valid parent.
 
 An empty backend returns `available=false`. This is explicit bootstrap mode: the weekly monitor may
 produce a report and Sheets dry-run, but it does not classify the run against invented history and
@@ -134,4 +148,9 @@ State contains public opportunity evidence and monitoring metadata, not OAuth cr
 tokens, service-account keys, or personal feedback notes. The future bucket must block public
 access, use uniform bucket-level access, and authorize the runtime identity only on that bucket.
 Snapshot validation treats restored content as untrusted data.
+
+The runtime permission design is split: prefix-conditioned `storage.objects.get` and
+`storage.objects.create` cover state reads and immutable creation, while a second binding grants
+only `storage.objects.delete` for the exact `researchradar/state/v1/current.json` resource.
+`storage.objects.list` is not required by the implementation.
 

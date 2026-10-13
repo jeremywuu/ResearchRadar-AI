@@ -1,103 +1,214 @@
 # GCS durable-state setup plan
 
-No bucket, IAM role, service account, or workflow variable is created by this milestone. This plan
-is for a separate approval and provisioning step.
+No bucket, role, IAM binding, object, lifecycle rule, or workflow variable is created by this
+milestone. Every command below is a reviewed future command, not an executed action.
 
-## Location decision required
+## Approved preflight target
 
-Choose one location before provisioning; ResearchRadar does not choose it silently.
+```text
+project: researchradar-ai
+project number: 310248522001
+region: europe-west1 (Belgium)
+storage class: STANDARD
+proposed bucket: researchradar-state-310248522001-euw1
+```
 
-| Option | Candidate | Cost profile | Residency and operations |
-|---|---|---|---|
-| US regional | `us-central1` | Eligible for the Cloud Storage Always Free storage/operation quotas when the account and usage qualify | Data resides in the US; cloud runner access is straightforward, but the project owner and primary use are in Europe |
-| European regional | `europe-west1` (Belgium) | No Cloud Storage Always Free storage allowance; Standard storage and small request charges apply | Data remains in Belgium and aligns with the operator's location |
+A read-only lookup on 2026-10-13 returned HTTP 404, so the name was unallocated at that moment. The
+global namespace is race-prone and the check is not a reservation; repeat it immediately before
+creation. Bucket names are publicly visible. Google recommends not embedding project numbers or
+other identifiable information in bucket names, so retaining this exact user-proposed name requires
+accepting that correlation risk. See
+[bucket naming guidance](https://docs.cloud.google.com/storage/docs/buckets).
 
-At current public list pricing, regional Standard storage is approximately USD 0.02 per GiB-month
-in common regions. A 100 MiB state history is therefore roughly USD 0.002/month before operations,
-soft-delete retention, and versioning overhead. Weekly snapshots should remain well below one
-dollar per year at this scale, but pricing and free-tier eligibility must be rechecked immediately
-before provisioning. The US Always Free allowance currently applies only to `us-west1`,
-`us-central1`, and `us-east1`, subject to account and quota conditions.
+## Final proposed bucket controls
 
-References: [Cloud Storage pricing](https://cloud.google.com/storage/pricing) and
-[bucket locations](https://docs.cloud.google.com/storage/docs/bucket-locations).
-
-## Proposed bucket controls
-
-- Globally unique bucket name chosen during the approved provisioning step.
-- Project: `researchradar-ai` (`310248522001`).
-- Standard storage class in the approved single region.
-- Uniform bucket-level access enabled.
-- Public access prevention enforced.
+- Regional `europe-west1` Standard storage.
+- Uniform bucket-level access enabled at creation.
+- Public access prevention enforced at creation.
 - No public principals and no object ACLs.
-- Object Versioning enabled to retain previous generations of the mutable `current.json` pointer.
-- Default soft delete retained initially for recovery, with its ongoing storage cost acknowledged.
-- No retention lock until restore and lifecycle behavior have been proven.
-- No automatic deletion of committed snapshots during the pilot.
-- A later lifecycle rule may delete noncurrent pointer generations after 30 days and abandoned
-  multipart uploads. Committed snapshot retention requires a separate policy decision because
-  deleting snapshot objects makes their old manifests unrestorable.
+- Seven-day soft delete configured explicitly.
+- Object Versioning disabled.
+- No retention lock initially.
+- No delete or storage-class-transition lifecycle rule for completed objects.
+- Optional `AbortIncompleteMultipartUpload` after seven days only.
+- No service-account key.
 
-Object Versioning and soft-deleted data are billable. Lifecycle actions are asynchronous, and
-soft-delete retention can continue charges after a lifecycle deletion. See
-[Object Versioning](https://docs.cloud.google.com/storage/docs/object-versioning),
+Object Versioning is unnecessary because snapshots and manifests are immutable, pointer writes are
+generation-guarded, the pointer retains a bounded recovery chain, and soft delete retains recently
+overwritten pointer generations for seven days. Soft-deleted bytes remain billable. An age-only
+snapshot deletion rule is unsafe because it can remove content still referenced by a valid commit
+manifest. See [Object Versioning](https://docs.cloud.google.com/storage/docs/object-versioning),
 [soft delete](https://docs.cloud.google.com/storage/docs/soft-delete), and
 [lifecycle management](https://docs.cloud.google.com/storage/docs/lifecycle).
 
-## Runtime identity and minimum permissions
+## IAM correction
 
-Two designs were evaluated:
+The Python adapter uses `Blob.upload_from_string` to replace `current.json`. This is an object
+content insert/overwrite, not a metadata patch. Google requires both `storage.objects.create` and
+`storage.objects.delete` when an insert replaces an existing object. `storage.objects.update` is a
+metadata permission and is not used. The implementation resolves known paths and does not list
+objects, so `storage.objects.list` is also unnecessary.
 
-1. Reuse `researchradar-reader@researchradar-ai.iam.gserviceaccount.com` and grant it a custom role
-   on only the dedicated state bucket.
-2. Create a second state-only service account and add a separately restricted WIF impersonation
-   path.
-
-The safer practical pilot is option 1 with a bucket-scoped custom role. The existing WIF provider
-already binds the exact repository, numeric owner/repository IDs, `main` branch, and exact workflow;
-the bucket binding adds resource isolation without introducing a second cloud identity into one
-job. A second identity offers stronger duty separation and should be reconsidered if Sheets and
-state access later move to different workflows.
-
-The proposed custom role contains only:
+Use two project-defined roles granted only on the dedicated bucket:
 
 ```text
-storage.objects.get
-storage.objects.list
-storage.objects.create
-storage.objects.update
+Normal state role:
+  storage.objects.get
+  storage.objects.create
+
+Exact pointer replacement role:
+  storage.objects.delete
 ```
 
-`update` is needed only for generation-guarded replacement of `current.json`. The runtime does not
-need object delete, bucket create/delete, IAM administration, or project-wide Storage Admin. The
-predefined `roles/storage.objectUser` is operationally convenient but broader because it includes
-delete and additional object operations, so it is not the preferred runtime grant. IAM may be
-granted at bucket scope; see [Cloud Storage IAM](https://docs.cloud.google.com/storage/docs/access-control/iam)
-and [Cloud Storage roles](https://docs.cloud.google.com/storage/docs/access-control/iam-roles).
+The normal role is conditioned to this prefix:
 
-Provisioning the bucket, custom role, bucket IAM binding, lifecycle, and workflow variables all
-require a later explicit authorization. No service-account key is needed or permitted.
+```cel
+resource.type == 'storage.googleapis.com/Object' &&
+resource.name.startsWith(
+  'projects/_/buckets/researchradar-state-310248522001-euw1/objects/researchradar/state/v1/'
+)
+```
+
+The delete role is conditioned to exactly one object:
+
+```cel
+resource.type == 'storage.googleapis.com/Object' &&
+resource.name ==
+  'projects/_/buckets/researchradar-state-310248522001-euw1/objects/researchradar/state/v1/current.json'
+```
+
+The two bindings combine only for `current.json`. The runtime cannot delete snapshots or commit
+manifests. Do not grant `roles/storage.objectAdmin`, `roles/storage.objectUser`, a project-wide
+Storage role, bucket administration, or IAM administration. See
+[object insert permissions](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/insert),
+[Cloud Storage IAM](https://docs.cloud.google.com/storage/docs/access-control/iam), and
+[IAM condition resource names](https://docs.cloud.google.com/iam/docs/conditions-resource-attributes).
+
+## Service-account decision
+
+Reuse `researchradar-reader@researchradar-ai.iam.gserviceaccount.com` for the pilot. Its WIF trust
+is already restricted to the exact private repository, numeric repository and owner IDs, `main`
+branch, and exact workflow. Bucket-only conditional grants keep storage authority out of project
+IAM and avoid introducing a second impersonated identity into one job. It retains Viewer-only LIVE
+PILOT access and the `spreadsheets.readonly` OAuth scope.
+
+A separate state identity offers stronger duty separation but would require a second WIF
+impersonation path or moving both reads into a new identity. Reconsider that design if Sheets and
+state operations later move to separate workflows. No service-account keys are permitted.
+
+## Option A versus pointer-free commits
+
+Keep Option A: immutable snapshots plus generation-CAS `current.json`.
+
+- Immutable objects use `ifGenerationMatch=0`.
+- Pointer content is downloaded with its observed generation.
+- Pointer replacement succeeds only for that same generation.
+- A losing concurrent run receives HTTP 412 and cannot replace the winner.
+- Interrupted immutable uploads are unreferenced orphans, never the baseline.
+- The previous pointer remains valid after a failed update.
+- Recovery walks up to 32 known predecessor IDs and validates schema, inventory, sizes, and hashes.
+- A post-recovery commit names the snapshot actually restored as its base and rejects a base that
+  is absent from the generation-matched recovery history.
+
+A pointer-free protocol would have to list all manifests and deterministically resolve concurrent
+sibling commits from the same parent. It would add branch-selection, malformed/future timestamp,
+incomplete candidate, and unbounded-list behavior. A lock object would recreate a mutable pointer.
+The exact-object delete condition makes Option A simpler and acceptably narrow.
+
+## Pricing and cost risks
+
+Current list prices checked on 2026-10-13:
+
+- `europe-west1` regional Standard: about USD 0.020/GiB-month.
+- Single-region Class A operations: USD 0.005 per 1,000.
+- Single-region Class B operations: USD 0.0004 per 1,000.
+- Inbound transfer: free.
+- General Internet outbound transfer begins around USD 0.12/GiB in the first tier; GitHub-hosted
+  runners are external to Google Cloud.
+- `europe-west1` is not an Always Free Cloud Storage region.
+- Soft-deleted bytes are billed like stored bytes during the seven-day retention period.
+
+At current scale, 100 MiB costs about USD 0.00195/month to store and about USD 0.0117 for one full
+Internet download. Weekly operations should remain below one cent per month. The material risks are
+unbounded snapshot accumulation, unexpectedly large raw evidence, or repeated egress—not the current
+33-record candidate. Preserve the existing project-scoped budget and monitor bytes, Class A calls,
+and outbound transfer. Pricing can change; verify the
+[current Cloud Storage pricing table](https://cloud.google.com/storage/pricing) before creation.
+
+## Exact provisioning commands — do not execute yet
+
+```bash
+gcloud storage buckets describe \
+  gs://researchradar-state-310248522001-euw1
+
+gcloud storage buckets create \
+  gs://researchradar-state-310248522001-euw1 \
+  --project=researchradar-ai \
+  --location=europe-west1 \
+  --default-storage-class=STANDARD \
+  --uniform-bucket-level-access \
+  --public-access-prevention \
+  --soft-delete-duration=7d
+
+gcloud storage buckets update \
+  gs://researchradar-state-310248522001-euw1 \
+  --no-versioning
+
+gcloud iam roles create researchRadarStateObjectWriter \
+  --project=researchradar-ai \
+  --title="ResearchRadar State Object Writer" \
+  --description="Read and create immutable ResearchRadar state objects" \
+  --permissions=storage.objects.get,storage.objects.create \
+  --stage=GA
+
+gcloud iam roles create researchRadarStatePointerDelete \
+  --project=researchradar-ai \
+  --title="ResearchRadar State Pointer Replacer" \
+  --description="Delete only the ResearchRadar current pointer during CAS replacement" \
+  --permissions=storage.objects.delete \
+  --stage=GA
+
+gcloud storage buckets add-iam-policy-binding \
+  gs://researchradar-state-310248522001-euw1 \
+  --member=serviceAccount:researchradar-reader@researchradar-ai.iam.gserviceaccount.com \
+  --role=projects/researchradar-ai/roles/researchRadarStateObjectWriter \
+  --condition="title=researchradar-state-prefix,expression=resource.type == 'storage.googleapis.com/Object' && resource.name.startsWith('projects/_/buckets/researchradar-state-310248522001-euw1/objects/researchradar/state/v1/')"
+
+gcloud storage buckets add-iam-policy-binding \
+  gs://researchradar-state-310248522001-euw1 \
+  --member=serviceAccount:researchradar-reader@researchradar-ai.iam.gserviceaccount.com \
+  --role=projects/researchradar-ai/roles/researchRadarStatePointerDelete \
+  --condition="title=researchradar-current-pointer-only,expression=resource.type == 'storage.googleapis.com/Object' && resource.name == 'projects/_/buckets/researchradar-state-310248522001-euw1/objects/researchradar/state/v1/current.json'"
+```
+
+No lifecycle command is included because the initial policy deliberately deletes no completed
+objects. Add an incomplete-multipart rule only after reviewing its exact JSON separately.
 
 ## Future workflow configuration
 
 After bootstrap approval, add these repository variables:
 
 ```text
-RESEARCH_RADAR_GCS_BUCKET=<approved globally unique bucket name>
+RESEARCH_RADAR_GCS_BUCKET=researchradar-state-310248522001-euw1
 RESEARCH_RADAR_GCS_PREFIX=researchradar/state/v1
 ```
 
-Install the project with `.[sheets,gcs]` and append `--state-backend gcs` to `weekly-run`. Keep the
-existing OIDC/WIF authentication, read-only Sheets scope, `workflow_dispatch`, and absence of every
-Sheets `--apply` command. Do not enable the schedule in the same change as initial state migration.
+Install `.[sheets,gcs]` and add `--state-backend gcs` to `weekly-run`. Keep OIDC/WIF,
+`spreadsheets.readonly`, `workflow_dispatch`, and the complete absence of Sheets `--apply`. Do not
+enable scheduling in the same change as bootstrap migration.
 
 ## Provisioning acceptance checks
 
-- Exact project, location, bucket, and public-access controls match the approved plan.
-- Runtime identity has only the approved bucket-level object permissions.
-- No service-account keys exist.
-- A create-only object test, read/list test, pointer CAS test, and forbidden delete test pass.
-- TEST and production spreadsheets remain inaccessible.
-- The first bootstrap manifest is reviewed before upload.
-- A second read-only workflow run restores the same checksum before scheduling is considered.
+1. Name lookup still returns 404 immediately before creation.
+2. Location is `EUROPE-WEST1`, class is `STANDARD`, uniform access is enabled, and public access
+   prevention is `enforced`.
+3. Soft delete is seven days and Object Versioning is disabled.
+4. Runtime identity has no project-wide Storage role and no user-managed key.
+5. Prefix role contains only get/create; pointer role contains only exact-object-conditioned delete.
+6. Immutable create/read succeeds; overwriting or deleting a snapshot is denied.
+7. Pointer generation-0 bootstrap and current-generation replacement succeed; stale generation
+   fails with HTTP 412.
+8. The approved bootstrap checksum and inventory match after readback.
+9. TEST and production spreadsheets remain inaccessible.
+10. Scheduling remains disabled until a separate manual restore smoke test succeeds.
 
