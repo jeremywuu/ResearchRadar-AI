@@ -13,6 +13,10 @@ from research_radar.models import (
     SourceVerificationStatus,
 )
 from research_radar.pipelines import run_jobs_pipeline
+from research_radar.storage.durable_state import (
+    LocalFilesystemStateBackend,
+    StateCommitRequest,
+)
 from research_radar.storage.sheets import InMemorySheetsAdapter
 from research_radar.weekly import run_weekly_monitor
 
@@ -201,6 +205,113 @@ def test_weekly_records_keep_stable_ids_without_durable_state(tmp_path: Path) ->
         second.plan.preview.execution.pipelines["jobs"].records[0].opportunity.opportunity_id
     )
     assert first_id == second_id
+
+
+def test_empty_durable_backend_enters_bootstrap_without_committing(tmp_path: Path) -> None:
+    result = run_weekly_monitor(
+        project_root=ROOT,
+        output_dir=tmp_path / "run",
+        state_dir=tmp_path / "legacy",
+        observed_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=PilotMemoryAdapter(),
+        adapters=_adapters(),
+        state_backend=LocalFilesystemStateBackend(tmp_path / "durable"),
+        run_id="cloud-run-1",
+    )
+
+    assert result.durable_baseline_available is False
+    assert result.state_restore is not None and result.state_restore.available is False
+    assert result.state_commit is None
+    assert not (tmp_path / "durable" / "current.json").exists()
+
+
+def test_existing_durable_state_is_restored_reconciled_and_committed(tmp_path: Path) -> None:
+    initial = run_weekly_monitor(
+        project_root=ROOT,
+        output_dir=tmp_path / "initial",
+        state_dir=tmp_path / "missing",
+        observed_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=PilotMemoryAdapter(),
+        adapters=_adapters(),
+    )
+    backend = LocalFilesystemStateBackend(tmp_path / "durable")
+    backend.commit(
+        initial.snapshot_dir,
+        StateCommitRequest(
+            run_id="bootstrap-1",
+            committed_at=NOW,
+            preference_configuration_hash=initial.plan.preview.preference_configuration_hash,
+            source_health={"official_jobs": "SUCCESS"},
+            bootstrap=True,
+        ),
+        expected_current_generation=None,
+    )
+    later = datetime(2026, 10, 19, 7, 0, tzinfo=UTC)
+
+    result = run_weekly_monitor(
+        project_root=ROOT,
+        output_dir=tmp_path / "second",
+        state_dir=tmp_path / "unused",
+        observed_at=later,
+        reference_date=date(2026, 10, 19),
+        adapter=PilotMemoryAdapter(),
+        adapters=_adapters(),
+        state_backend=backend,
+        run_id="cloud-run-2",
+    )
+
+    assert result.durable_baseline_available is True
+    assert result.state_commit is not None
+    assert result.state_commit.snapshot_id == "cloud-run-2"
+    assert result.plan.preview.workbook.plans["jobs"].insert_count == 1
+
+
+def test_weekly_deadlines_are_semantically_labeled_without_alias_duplicates(
+    tmp_path: Path,
+) -> None:
+    event = {
+        "fictional": False,
+        "title": "Cognitive Conference 2026",
+        "organization": "Official Event",
+        "source_url": "https://official.example/event",
+        "official_source_url": "https://official.example/event",
+        "adapter_source_id": "official_events",
+        "series_name": "Cognitive Conference",
+        "edition_year": 2026,
+        "event_type": "academic conference",
+        "starts_on": "2026-11-01",
+        "ends_on": "2026-11-03",
+        "submission_deadline": "2026-10-18",
+        "workshop_submission_deadline": "2026-10-18",
+        "research_areas": ["Computational cognitive neuroscience"],
+        "source_verification_status": "VERIFIED_OFFICIAL",
+        "source_type": "official_html",
+        "source_evidence": ["Official dates"],
+        "extraction_method": "html",
+        "opportunity_status": "confirmed upcoming",
+        "country": "Belgium",
+    }
+    adapters = _adapters()
+    adapters["official_events"] = StaticAdapter(
+        "official_events", "events", SourceHealth.SUCCESS, [event]
+    )
+    result = run_weekly_monitor(
+        project_root=ROOT,
+        output_dir=tmp_path / "run",
+        state_dir=tmp_path / "missing",
+        observed_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=PilotMemoryAdapter(),
+        adapters=adapters,
+    )
+    report = result.report_path.read_text()
+
+    assert report.count("Abstract submission deadline: `2026-10-18`") == 1
+    assert report.count("Workshop proposal deadline: `2026-10-18`") == 1
+    assert "Conference start: `2026-11-01`" in report
+    assert "Conference end: `2026-11-03`" in report
 
 
 def test_weekly_workflow_is_manual_only_free_compatible_and_read_only() -> None:

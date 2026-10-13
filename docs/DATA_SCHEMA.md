@@ -219,6 +219,32 @@ Unknown source facts remain `null`; review flags identify actionable unknowns. T
 bounded extracted input is retained in `original_values`, while normalized values occupy typed
 fields. `is_fictional` distinguishes demo fixtures from live official-source records.
 
+## Durable-state commit manifest
+
+Durable state reuses the four canonical live snapshot files. It does not serialize a second form of
+opportunity and does not copy personal feedback notes from Google Sheets. Each immutable commit
+adds this envelope:
+
+```text
+schema_version
+snapshot_id
+run_id
+committed_at
+bootstrap
+previous_snapshot_id?
+preference_configuration_hash
+source_health
+record_counts
+state_checksum
+files[name].sha256
+files[name].size
+```
+
+`current.json` contains `schema_version`, `snapshot_id`, `previous_snapshot_id`, and the canonical
+manifest checksum. Local pointer hashes and GCS object generations are concurrency tokens, not
+domain timestamps. A snapshot is authoritative only after all files and its manifest validate and
+the current pointer is atomically advanced.
+
 ## Official source collection result
 
 Each source result contains a `SourceDescriptor` and retrieval outcome:

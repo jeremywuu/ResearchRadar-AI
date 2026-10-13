@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -24,6 +25,11 @@ from research_radar.live_integration import (
 )
 from research_radar.sheets_demo import build_demo_sheets_adapter
 from research_radar.sheets_live import run_live_demo_sync
+from research_radar.storage.durable_state import (
+    DurableStateError,
+    GoogleCloudStorageStateBackend,
+    LocalFilesystemStateBackend,
+)
 from research_radar.storage.google_auth import SheetsAuthenticationError
 from research_radar.storage.google_sheets import (
     GoogleSheetsAdapter,
@@ -121,6 +127,12 @@ def build_parser() -> argparse.ArgumentParser:
     weekly.add_argument("--project-root", type=Path, default=Path.cwd())
     weekly.add_argument("--output-dir", type=Path, default=Path("data/automation/run"))
     weekly.add_argument("--state-dir", type=Path, default=Path("data/automation/state/live"))
+    weekly.add_argument(
+        "--state-backend",
+        choices=("none", "local", "gcs"),
+        default="none",
+        help="durable state adapter; default keeps the cloud workflow in safe stateless mode",
+    )
     weekly.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
     return parser
 
@@ -275,6 +287,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "weekly-run":
             observed_at = datetime.now(UTC)
             adapter = _required_live_pilot_adapter()
+            state_backend = None
+            if args.state_backend == "local":
+                state_backend = LocalFilesystemStateBackend(args.state_dir)
+            elif args.state_backend == "gcs":
+                state_backend = GoogleCloudStorageStateBackend.from_environment()
             result = run_weekly_monitor(
                 project_root=args.project_root,
                 output_dir=args.output_dir,
@@ -282,6 +299,8 @@ def main(argv: list[str] | None = None) -> int:
                 observed_at=observed_at,
                 reference_date=args.reference_date,
                 adapter=adapter,
+                state_backend=state_backend,
+                run_id=os.environ.get("GITHUB_RUN_ID"),
             )
             print("ResearchRadar weekly monitoring completed (read-only)")
             print(f"sources successful={result.source_successes}; issues={result.source_issues}")
@@ -291,6 +310,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"plan fingerprint: {result.plan.plan_fingerprint}")
             print(f"report: {result.report_path}")
+            if result.state_restore and result.state_restore.recovered_from_snapshot_id:
+                print(
+                    "state recovery: restored "
+                    f"{result.state_restore.snapshot_id} after rejecting "
+                    f"{result.state_restore.recovered_from_snapshot_id}"
+                )
+            if result.state_commit:
+                print(f"state committed: {result.state_commit.snapshot_id}")
             print("no Google Sheets writes performed")
             return result.exit_code
         if args.command == "sheets-init":
@@ -457,7 +484,8 @@ def main(argv: list[str] | None = None) -> int:
         SheetsAuthenticationError,
         SheetsConfigurationError,
         LiveDataError,
+        DurableStateError,
     ) as exc:
-        print(f"Google Sheets operation failed: {exc}")
+        print(f"ResearchRadar operation failed: {exc}")
         return 1
     return 2

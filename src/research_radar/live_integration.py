@@ -1491,7 +1491,6 @@ def _source_coverage(
                 accepted_by_source[source_id] = accepted_by_source.get(source_id, 0) + 1
     result: dict[str, SourceCoverage] = {}
     sources = metadata.get("sources", {})
-    pipelines = metadata.get("pipelines", {})
     if not isinstance(sources, dict):
         return result
     for source_id, source in sources.items():
@@ -1499,14 +1498,7 @@ def _source_coverage(
             continue
         records = source.get("records", [])
         extracted = len(records) if isinstance(records, list) else 0
-        descriptor = source.get("source", {})
-        category = descriptor.get("category") if isinstance(descriptor, dict) else None
-        pipeline = pipelines.get(category, {}) if isinstance(pipelines, dict) else {}
-        accepted = (
-            int(pipeline["records_accepted"])
-            if isinstance(pipeline, dict) and "records_accepted" in pipeline
-            else accepted_by_source.get(source_id, 0)
-        )
+        accepted = accepted_by_source.get(source_id, 0)
         result[source_id] = SourceCoverage(
             source_id=source_id,
             health=str(source.get("health", "UNKNOWN")),

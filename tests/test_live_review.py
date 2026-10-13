@@ -394,6 +394,35 @@ def test_source_coverage_and_feedback_are_preserved(tmp_path: Path) -> None:
     assert job.score.components["research_relevance"] == 87.5
 
 
+def test_source_coverage_acceptance_is_isolated_per_source(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    _write_live_snapshots(live_dir)
+    metadata_path = live_dir / "source_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["sources"]["empty_jobs_source"] = {
+        "source": {"source_id": "empty_jobs_source", "category": "jobs"},
+        "health": "SUCCESS_NO_MATCHES",
+        "retrieved_at": NOW.isoformat(),
+        "records_fetched": 2,
+        "records_considered": 0,
+        "records": [],
+    }
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    preview = prepare_live_sheets_preview(
+        project_root=ROOT,
+        live_data_dir=live_dir,
+        review_dir=tmp_path / "review",
+        generated_at=NOW,
+        reference_date=date(2026, 10, 11),
+        adapter=PilotMemoryAdapter(),
+        target_environment=TargetEnvironment.LIVE_PILOT,
+    )
+
+    assert preview.coverage["official_jobs"].records_accepted == 1
+    assert preview.coverage["empty_jobs_source"].records_accepted == 0
+
+
 def test_verified_source_and_low_career_relevance_are_independent(tmp_path: Path) -> None:
     live_dir = tmp_path / "live"
     ids = _write_live_snapshots(

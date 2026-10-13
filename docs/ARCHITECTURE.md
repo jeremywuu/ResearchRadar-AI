@@ -345,12 +345,25 @@ and renders a private Markdown brief without feedback notes. It treats `SUCCESS_
 healthy source outcome and reports blocked or failed sources without converting them into closed
 opportunities.
 
-GitHub-hosted runners do not retain ignored local snapshots. When a complete state directory is
-available, the existing fresh-observation reconciler preserves history. Without it, the weekly run
-still produces a current snapshot and Sheets preview but explicitly disables authoritative
-cross-run change counts. Fourteen-day Actions artifacts are review outputs, not durable state. A
-private versioned GCS bucket with lifecycle and generation preconditions is the recommended future
-backend; it is not provisioned or used yet.
+GitHub-hosted runners do not retain ignored local snapshots. Fourteen-day Actions artifacts are
+review outputs, not durable state. `DurableStateBackend` now provides one restore/commit contract
+implemented by a local filesystem adapter and an optional GCS adapter. Both use the existing four
+snapshot files and the existing fresh-observation reconciler; no parallel opportunity database or
+scoring path exists.
+
+Snapshots and commit manifests are append-only. A commit writes and validates every immutable
+object before replacing `current.json`. The local adapter uses an exclusive lock plus atomic
+replace; GCS uses create-only object preconditions and a generation-matched pointer update. A stale
+writer therefore leaves only non-authoritative orphan objects. Restore validates schema, stable-ID
+uniqueness, per-file checksums, whole-state checksum, and pointer-to-manifest integrity, with a
+reported fallback to the previous verified snapshot when the latest commit is corrupt.
+
+An empty backend is explicit bootstrap mode and is never auto-committed by a routine weekly run.
+Partial source runs may advance state only when at least one source succeeds and reconciliation is
+safe; unavailable-source records are copied forward with their previous facts and timestamps. The
+workflow still defaults to no durable backend. GCS remains disabled until its location, private
+bucket, bucket-scoped IAM, and initial migration are separately approved. See
+`DURABLE_STATE_DESIGN.md` and `GCS_SETUP_PLAN.md`.
 
 ## Security
 

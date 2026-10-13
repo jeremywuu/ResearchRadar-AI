@@ -365,8 +365,8 @@ Status: complete; only the separately approved LIVE PILOT score cells were writt
 
 ## Milestone 5A — GitHub Actions weekly automation infrastructure
 
-Status: complete; the private repository is deployed with manual dispatch only. No cloud identity
-or hosted run has been created.
+Status: complete; the private repository is deployed with manual dispatch only. The first
+GitHub-hosted read-only smoke test completed successfully through OIDC/WIF.
 
 - Add Monday 09:00 Europe/Brussels scheduling plus manual dispatch.
 - Separate offline tests from authenticated, read-only source collection and Sheets planning.
@@ -388,9 +388,9 @@ Status: complete; the audited history is on private `jeremywuu/ResearchRadar-AI`
 - Audit tracked files and complete Git history before configuring the sole approved remote.
 - Push only to `jeremywuu/ResearchRadar-AI` after confirming that it exists, is private, and empty.
 
-## Milestone 5B.2 — Google Cloud WIF preflight
+## Milestone 5B.2/5B.3 — Google Cloud WIF and first hosted smoke test
 
-Status: preflight and exact setup plan complete; resource creation awaits explicit approval.
+Status: complete for the read-only pilot.
 
 - Reuse project `researchradar-ai` and record its verified project number.
 - Anchor trust to immutable GitHub repository and owner IDs plus the exact `main` ref and
@@ -400,6 +400,19 @@ Status: preflight and exact setup plan complete; resource creation awaits explic
 - Share only LIVE PILOT as Viewer and retain the Sheets read-only OAuth scope.
 - Keep the workflow manual-only and perform no cloud, IAM, Sheets, or GitHub Actions mutation
   during preflight.
+
+## Milestone 5C.1A — Durable state architecture and local implementation
+
+Status: locally implemented; GCS provisioning and bootstrap await separate approval.
+
+- Add one immutable snapshot contract with filesystem and GCS adapters.
+- Validate schemas, stable IDs, deterministic serialization, and layered checksums.
+- Commit immutable snapshot objects before a generation-guarded current pointer.
+- Recover from a corrupt latest commit using the previous verified snapshot.
+- Preserve unavailable-source history and reject unsafe or all-failed state advancement.
+- Keep empty state in explicit bootstrap mode; never auto-upload a first baseline.
+- Correct semantic deadline reporting and isolate accepted counts per source.
+- Keep the deployed workflow stateless until bucket location, IAM, and migration are approved.
 
 ## Milestone 6 — Automation and reliability
 

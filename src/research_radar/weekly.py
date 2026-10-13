@@ -21,6 +21,12 @@ from research_radar.live_integration import (
     prepare_incremental_live_sync,
 )
 from research_radar.models import AcademicEvent, IndustryJob, PhDOpportunity, SourceHealth
+from research_radar.storage.durable_state import (
+    DurableStateBackend,
+    StateCommitRequest,
+    StateCommitResult,
+    StateRestoreResult,
+)
 
 if TYPE_CHECKING:
     from research_radar.storage.sheets import SheetsAdapter
@@ -39,6 +45,8 @@ class WeeklyRunResult:
     source_successes: int
     source_issues: int
     exit_code: int
+    state_restore: StateRestoreResult | None = None
+    state_commit: StateCommitResult | None = None
 
 
 def run_weekly_monitor(
@@ -50,18 +58,29 @@ def run_weekly_monitor(
     reference_date: date,
     adapter: SheetsAdapter,
     adapters: dict[str, OfficialSourceAdapter] | None = None,
+    state_backend: DurableStateBackend | None = None,
+    run_id: str | None = None,
 ) -> WeeklyRunResult:
     """Collect approved sources and build a read-only Sheets plan and weekly brief."""
 
     if observed_at.tzinfo is None:
         raise ValueError("observed_at must be timezone-aware")
     output_dir.mkdir(parents=True, exist_ok=True)
-    durable_baseline = _has_complete_snapshot(state_dir)
+    state_restore: StateRestoreResult | None = None
+    current_generation: str | int | None = None
+    baseline_dir = state_dir
+    if state_backend is not None:
+        baseline_dir = output_dir / "restored-state"
+        state_restore = state_backend.restore(baseline_dir)
+        current_generation = state_restore.current_generation
+    durable_baseline = (
+        state_restore.available if state_restore is not None else _has_complete_snapshot(state_dir)
+    )
     analysis: FreshObservationAnalysis | None = None
     if durable_baseline:
         fresh = collect_fresh_observation(
             project_root=project_root,
-            live_dir=state_dir,
+            live_dir=baseline_dir,
             history_root=output_dir / "history",
             observations_root=output_dir / "observations",
             observed_at=observed_at,
@@ -70,7 +89,7 @@ def run_weekly_monitor(
         )
         collection = fresh.collection
         analysis = fresh.analysis
-        snapshot_dir = state_dir
+        snapshot_dir = baseline_dir
     else:
         snapshot_dir = output_dir / "current"
         collection = collect_live(
@@ -107,6 +126,30 @@ def run_weekly_monitor(
         plan.preview.workbook.failures
         or any(item.invalid_records or item.conflicts for item in plans)
     )
+    state_commit = None
+    unsafe_observation = analysis is not None and any(
+        item.status is FreshObservationStatus.NEEDS_REVIEW for item in analysis.changes
+    )
+    if (
+        state_backend is not None
+        and durable_baseline
+        and successes > 0
+        and not unsafe_plan
+        and not unsafe_observation
+    ):
+        state_commit = state_backend.commit(
+            snapshot_dir,
+            StateCommitRequest(
+                run_id=run_id or observed_at.strftime("run-%Y%m%dT%H%M%S.%fZ"),
+                committed_at=observed_at,
+                preference_configuration_hash=plan.preview.preference_configuration_hash,
+                source_health={
+                    source_id: result.health.value
+                    for source_id, result in collection.sources.items()
+                },
+            ),
+            expected_current_generation=current_generation,
+        )
     return WeeklyRunResult(
         report_path=report_path,
         snapshot_dir=snapshot_dir,
@@ -115,6 +158,8 @@ def run_weekly_monitor(
         source_successes=successes,
         source_issues=issues,
         exit_code=int(successes == 0 or unsafe_plan),
+        state_restore=state_restore,
+        state_commit=state_commit,
     )
 
 
@@ -163,9 +208,9 @@ def _write_weekly_report(
         "",
     ]
     deadlines = _approaching_deadlines(plan, reference_date)
-    lines.append(f"- Deadlines approaching within 60 days: {len(deadlines)}")
-    for title, deadline, url in deadlines:
-        lines.append(f"  - [{title}]({url}) — `{deadline.isoformat()}`")
+    lines.append(f"- Upcoming deadlines and event dates within 60 days: {len(deadlines)}")
+    for title, label, deadline, url in deadlines:
+        lines.append(f"  - [{title}]({url}) — {label}: `{deadline.isoformat()}`")
 
     _append_category(lines, "B. Industry Jobs", plan, "jobs")
     _append_category(lines, "C. PhD Opportunities", plan, "phd")
@@ -311,21 +356,37 @@ def _append_career_intelligence(lines: list[str], plan: IncrementalLiveSyncPlan)
 def _approaching_deadlines(
     plan: IncrementalLiveSyncPlan,
     reference_date: date,
-) -> list[tuple[str, date, str]]:
+) -> list[tuple[str, str, date, str]]:
     limit = reference_date + timedelta(days=60)
-    result: list[tuple[str, date, str]] = []
+    result: list[tuple[str, str, date, str]] = []
+    seen: set[tuple[str, str, date]] = set()
     for report in plan.preview.execution.pipelines.values():
         for processed in report.records:
             opportunity = processed.opportunity
-            candidates = [opportunity.deadline]
             if isinstance(opportunity, AcademicEvent):
-                candidates.extend(
-                    [opportunity.submission_deadline, opportunity.registration_deadline]
+                candidates = (
+                    ("Abstract submission deadline", opportunity.submission_deadline),
+                    ("Registration deadline", opportunity.registration_deadline),
+                    ("Workshop proposal deadline", opportunity.workshop_submission_deadline),
+                    (
+                        "Presenter registration deadline",
+                        opportunity.presenter_registration_deadline,
+                    ),
+                    ("Conference start", opportunity.starts_on),
+                    ("Conference end", opportunity.ends_on),
+                    ("Workshop start", opportunity.workshop_starts_on),
+                    ("Workshop end", opportunity.workshop_ends_on),
                 )
-            for deadline in candidates:
-                if deadline is not None and reference_date <= deadline <= limit:
-                    result.append((opportunity.title, deadline, _official_url(opportunity)))
-    return sorted(result, key=lambda item: item[1])
+                if opportunity.submission_deadline is None:
+                    candidates = (("Event deadline", opportunity.deadline), *candidates)
+            else:
+                candidates = (("Application deadline", opportunity.deadline),)
+            for label, deadline in candidates:
+                key = (opportunity.opportunity_id, label, deadline) if deadline else None
+                if deadline is not None and reference_date <= deadline <= limit and key not in seen:
+                    seen.add(key)
+                    result.append((opportunity.title, label, deadline, _official_url(opportunity)))
+    return sorted(result, key=lambda item: (item[2], item[0], item[1]))
 
 
 def _official_url(opportunity: object) -> str:

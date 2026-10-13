@@ -1,5 +1,10 @@
 """Local storage adapters."""
 
+from research_radar.storage.durable_state import (
+    DurableStateBackend,
+    GoogleCloudStorageStateBackend,
+    LocalFilesystemStateBackend,
+)
 from research_radar.storage.json_store import JsonOutputStore
 from research_radar.storage.sheets import (
     InMemorySheetsAdapter,
@@ -7,4 +12,12 @@ from research_radar.storage.sheets import (
     plan_sheet_sync,
 )
 
-__all__ = ["InMemorySheetsAdapter", "JsonOutputStore", "SheetsAdapter", "plan_sheet_sync"]
+__all__ = [
+    "DurableStateBackend",
+    "GoogleCloudStorageStateBackend",
+    "InMemorySheetsAdapter",
+    "JsonOutputStore",
+    "LocalFilesystemStateBackend",
+    "SheetsAdapter",
+    "plan_sheet_sync",
+]
