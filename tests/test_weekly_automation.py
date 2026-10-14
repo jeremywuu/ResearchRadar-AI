@@ -342,14 +342,17 @@ def test_weekly_deadlines_are_semantically_labeled_without_alias_duplicates(
     assert "Conference end: `2026-11-03`" in report
 
 
-def test_weekly_workflow_is_manual_only_free_compatible_and_read_only() -> None:
+def test_weekly_workflow_has_approved_schedule_and_remains_read_only() -> None:
     workflow_path = ROOT / ".github" / "workflows" / "weekly-monitoring.yml"
     workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     triggers = workflow["on"]
     monitor = workflow["jobs"]["monitor"]
     workflow_text = workflow_path.read_text(encoding="utf-8")
 
-    assert triggers == {"workflow_dispatch": ""}
+    assert triggers == {
+        "workflow_dispatch": "",
+        "schedule": [{"cron": "0 9 * * 1", "timezone": "Europe/Brussels"}],
+    }
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     assert workflow["jobs"]["test"]["runs-on"] == "ubuntu-24.04"
     assert monitor["runs-on"] == "ubuntu-24.04"
@@ -374,12 +377,12 @@ def test_weekly_workflow_is_manual_only_free_compatible_and_read_only() -> None:
     assert monitor["steps"][-1]["with"]["retention-days"] == "14"
 
 
-def test_deferred_weekly_schedule_remains_documented() -> None:
+def test_active_weekly_schedule_is_documented() -> None:
     setup_guide = (ROOT / "docs" / "GITHUB_ACTIONS_SETUP.md").read_text(encoding="utf-8")
 
     assert 'cron: "0 9 * * 1"' in setup_guide
     assert 'timezone: "Europe/Brussels"' in setup_guide
-    assert "first deployment is deliberately manual-only" in setup_guide
+    assert "scheduled production monitoring is active" in setup_guide
 
 
 def test_wif_plan_uses_numeric_ids_and_exact_workflow_claim() -> None:

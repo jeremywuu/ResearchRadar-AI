@@ -321,7 +321,7 @@ timestamps.
 `.github/workflows/weekly-monitoring.yml` separates offline validation from the authenticated
 read-only monitoring job. The collection service still isolates the jobs, PhD, and events
 pipelines so one source or category failure does not stop sibling processing. The intended weekly
-trigger, currently disabled during the first private-repository deployment, is:
+trigger is:
 
 ```yaml
 schedule:
@@ -329,10 +329,10 @@ schedule:
     timezone: "Europe/Brussels"
 ```
 
-The deployed workflow currently keeps only `workflow_dispatch` until OIDC/WIF and the first hosted
-read-only run are verified. A future daily mode changes the cron expression to `0 9 * * *`. The
-workflow file is the schedule's single source of truth. Concurrency prevents two runs for the same
-ref, job timeouts bound cost, and no workflow command contains `--apply`.
+The deployed workflow also retains `workflow_dispatch`. Scheduled starts are best-effort and may
+be delayed. A future daily mode changes the cron expression to `0 9 * * *`. The workflow file is
+the schedule's single source of truth. Concurrency prevents two runs for the same ref, job
+timeouts bound cost, and no workflow command contains `--apply`.
 The jobs are pinned to `ubuntu-24.04` during initial production operation. The concurrency group
 uses `cancel-in-progress: false`, so a queued manual or scheduled run cannot terminate an active
 GCS commit; the storage generation CAS remains the authoritative race safeguard.

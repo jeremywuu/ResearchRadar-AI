@@ -434,13 +434,24 @@ Status: complete; the private europe-west1 bucket, conditional IAM, and reviewed
 
 ## Milestone 5C.2A — GitHub Actions durable-state integration
 
-Status: implemented locally; first hosted state-commit execution requires separate approval.
+Status: complete; two independent hosted state-commit runs and a Node.js 24 compatibility run
+restored and advanced the authoritative GCS state successfully.
 
 - Restore the authoritative GCS baseline before any official-source collection.
 - Fail closed on missing configuration, authentication, state, schema, or checksum failures.
 - Request separate read-only Sheets and read/write durable-state OAuth scopes through WIF ADC.
 - Commit only validated reconciled snapshots using immutable objects and pointer-generation CAS.
-- Keep the workflow manual-only and all Google Sheets operations read-only.
+- Keep all Google Sheets operations read-only.
+
+## Milestone 5C.3 — Weekly monitoring production activation
+
+Status: complete; Monday 09:00 Europe/Brussels monitoring is active with manual dispatch retained.
+
+- Pin both jobs to `ubuntu-24.04` and use Node.js 24-compatible official Actions.
+- Serialize manual and scheduled runs without cancelling an active GCS commit.
+- Preserve restore-first operation, immutable snapshots, generation CAS, and Sheets read-only mode.
+- Generate a private 14-day Weekly Brief artifact and GitHub job summary for every run.
+- Treat scheduled starts as best-effort and review the runner pin during future maintenance.
 
 ## Milestone 6 — Automation and reliability
 

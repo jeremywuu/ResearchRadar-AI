@@ -44,16 +44,9 @@ Both jobs are pinned to `ubuntu-24.04` for the initial production period so a fu
 maintenance. The official checkout, Python setup, Google authentication, and artifact actions use
 Node.js 24-compatible major versions; report artifacts use `actions/upload-artifact@v7`.
 
-## 3. Manual execution and deferred schedule
+## 3. Manual execution and weekly schedule
 
-The first deployment is deliberately manual-only while Google WIF is unconfigured:
-
-```yaml
-workflow_dispatch:
-```
-
-After WIF and the first hosted read-only smoke test are approved, restore this documented schedule
-under `on`:
+The scheduled production monitoring is active alongside manual dispatch:
 
 ```yaml
 schedule:
@@ -63,11 +56,13 @@ workflow_dispatch:
 ```
 
 GitHub supports an IANA `timezone` on scheduled workflows, so this represents Monday 09:00 in
-Brussels across daylight-saving transitions. Scheduled workflows run from the latest commit on
-the default branch. See the official [workflow syntax documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
-For the initial pilot, open **Actions → ResearchRadar Weekly Monitoring → Run workflow** and select
+Brussels across daylight-saving transitions. Scheduled workflows are best-effort and may start
+later than the nominal time. They run from the latest commit on the default branch. See the
+official [workflow syntax documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+To run manually, open **Actions → ResearchRadar Weekly Monitoring → Run workflow** and select
 `main`; the workflow refuses Google authentication from another repository, branch, or workflow
-path.
+path. The latest scheduled or manual run appears at the top of the workflow's run list; open it to
+read the job summary and download its private brief from **Artifacts**.
 
 ## 4. Google Workload Identity Federation
 
