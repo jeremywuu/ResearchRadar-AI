@@ -296,6 +296,13 @@ until the parser and schema validation both succeed.
 does not trigger collection by itself. Every entry has a stable source ID, category, official
 HTTPS URL, and implementation state.
 
+`source_discovery.yaml` is the Milestone 6 review registry. It records accessibility, extraction
+feasibility, entity type, provenance quality, limitations, and review priority, and requires
+`activate_in_production: false` for every entry. Offline pilot adapters live outside
+`default_adapters()`; adding one to this registry cannot change the weekly source list. Programme,
+lab, and faculty profiles continue to use `SourceCollectionResult.informational_profiles`, while
+only cycle-specific, actionable evidence enters an opportunity pipeline.
+
 ## Score reconciliation and informational source profiles
 
 Live Sheets planning now forms its desired set from two independent sets: provenance-valid new

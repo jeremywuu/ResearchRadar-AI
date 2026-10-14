@@ -459,6 +459,32 @@ Status: complete; Monday 09:00 Europe/Brussels monitoring is active with manual 
 - Verify the first private GitHub-hosted read-only run and measure actual usage.
 - Consider daily mode only after weekly reliability and cost are understood.
 
+## Milestone 6.1A — Research opportunity source discovery and validation
+
+Status: implemented locally; production activation is not authorized.
+
+- Review 15 first-party PhD, BCI/neurotechnology, and event sources using domain relevance rather
+  than raw opportunity counts.
+- Keep programme, lab, faculty, opening, cycle-announcement, and funding entities distinct.
+- Add review-only CMU Neural Computation, Paradromics, and RLDM 2027 pilot adapters outside the
+  production source registry.
+- Preserve Fall 2028 uncertainty, honest no-match results, ATS provenance, bounded retrieval, and
+  existing scoring behavior.
+- Propose a research-first Weekly Brief structure without changing the production report.
+
+Acceptance evidence:
+
+- The project client retrieved CMU PNC, Paradromics/JazzHR, and RLDM successfully with robots and
+  TLS verification; UCL Gatsby, UCL Gatsby-SWC, and Princeton returned HTTP 403 and remained
+  blocked without bypasses.
+- CMU emits one `PHD_PROGRAM_PROFILE` and zero opportunities because no Fall 2028 cycle is stated.
+- Paradromics found nine jobs, considered three evidence-bearing candidates, and extracted three
+  BCI/neural-data roles without requesting an unrelated mechanical role.
+- RLDM 2027 preserves July 6–9 in Paris and the January 20, 2027 AoE abstract deadline as distinct
+  event facts.
+- All pilot sources remain disabled for production; weekly scheduling, GCS state, Sheets, and IAM
+  are unchanged.
+
 ## Later phases
 
 - Reliable salary benchmarking and trends

@@ -120,6 +120,27 @@ Nothing in this milestone writes live opportunities to Google Sheets.
    cases.
 7. Run a bounded, explicit `collect ... --live` smoke test and document actual limitations.
 
+## Milestone 6 research-discovery pilots
+
+Research discovery pilots are deliberately separate from `default_adapters()`. Their reviewed
+metadata lives in `config/source_discovery.yaml`, where every entry must keep
+`activate_in_production: false`. Passing an offline parser test or a bounded source check does not
+activate weekly monitoring.
+
+The initial pilots are:
+
+- CMU Neural Computation: emits a `PHD_PROGRAM_PROFILE` and `SUCCESS_NO_MATCHES` until an official
+  page names an admission cycle. A general December 1 statement is not a Fall 2028 deadline.
+- Paradromics: the first-party careers page proves its JazzHR relationship. The adapter follows at
+  most five plausible roles and requires role-specific BCI or neural-data evidence; an irrelevant
+  candidate is an intentional exclusion, not a source error.
+- RLDM 2027: combines the official home and call-for-abstracts pages, keeping event dates and the
+  abstract submission deadline in separate fields.
+
+These adapters use the same verified HTTP client, robots checks, source result contract,
+normalizers, stable-ID generation, and scoring pipelines as production. Activation requires a
+separate review and explicit registration change.
+
 ## TLS troubleshooting
 
 The project uses Python `urllib`, not Requests. The default transport creates an `SSLContext` from

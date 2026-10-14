@@ -58,6 +58,12 @@ These states answer different questions and must never be collapsed:
 Monitoring a target is not evidence of a vacancy, admission cycle, event edition, funding, or
 deadline. Every asserted fact must preserve its source URL and observation time.
 
+Milestone 6 source discovery prioritizes programme, lab, and supervisor intelligence plus
+role-level neuroscience/BCI evidence over raw job volume. `PHD_PROGRAM_PROFILE`, `LAB_PROFILE`,
+and `FACULTY_PROFILE` are not open opportunities. A BCI employer name is not role-level domain
+evidence, and a general AI or software role remains transferable unless its own source text links
+the work to cognition, behavior, neural signals, decoding, or neuroscience.
+
 ## Watchlist management
 
 The initial watchlist is stored in `config/watchlist.yaml`. Users can add, disable, remove, or

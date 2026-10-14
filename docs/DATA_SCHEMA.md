@@ -219,6 +219,19 @@ Unknown source facts remain `null`; review flags identify actionable unknowns. T
 bounded extracted input is retained in `original_values`, while normalized values occupy typed
 fields. `is_fictional` distinguishes demo fixtures from live official-source records.
 
+## Research source discovery registry
+
+`config/source_discovery.yaml` is review-only and cannot activate production. Each entry contains
+an official HTTPS URL, category, source entity type, research relevance, current accessibility,
+extraction feasibility, data structure, update frequency, provenance quality, expected value,
+limitations, priority, review status, and `activate_in_production: false`.
+
+PhD discovery distinguishes `PHD_PROGRAM_PROFILE`, `LAB_PROFILE`, `FACULTY_PROFILE`,
+`CONFIRMED_PHD_OPENING`, `APPLICATION_CYCLE_ANNOUNCEMENT`, and `FUNDING_OPPORTUNITY`. The first
+three are informational profiles unless the same official evidence explicitly announces an
+actionable cycle or opening. General deadline text is stored separately from a cycle-specific
+deadline, and an earlier cycle is never relabeled as Fall 2028.
+
 ## Durable-state commit manifest
 
 Durable state reuses the four canonical live snapshot files. It does not serialize a second form of

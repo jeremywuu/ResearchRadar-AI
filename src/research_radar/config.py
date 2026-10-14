@@ -323,12 +323,89 @@ def load_source_expansion(path: Path) -> dict[str, Any]:
     return data
 
 
+def load_source_discovery(path: Path) -> dict[str, Any]:
+    """Validate the review-only Milestone 6 source registry."""
+
+    data = load_yaml(path)
+    _require_version_one(data, path)
+    sources = data.get("sources")
+    if not isinstance(sources, list) or not sources:
+        raise ConfigValidationError(f"{path}: sources must be a non-empty list")
+    allowed_categories = {"phd", "jobs", "events"}
+    allowed_statuses = {
+        "READY_FOR_PILOT",
+        "NEEDS_MANUAL_REVIEW",
+        "INFORMATIONAL_ONLY",
+        "BLOCKED",
+        "UNSUITABLE",
+    }
+    allowed_priorities = {"P0", "P1", "P2"}
+    allowed_entity_types = {
+        "PHD_PROGRAM_PROFILE",
+        "LAB_PROFILE",
+        "FACULTY_PROFILE",
+        "CONFIRMED_PHD_OPENING",
+        "APPLICATION_CYCLE_ANNOUNCEMENT",
+        "FUNDING_OPPORTUNITY",
+        "OFFICIAL_CAREERS_SOURCE",
+        "EVENT_EDITION",
+    }
+    required = (
+        "source_id",
+        "organization",
+        "url",
+        "category",
+        "source_entity_type",
+        "research_relevance",
+        "current_accessibility",
+        "extraction_feasibility",
+        "data_structure",
+        "update_frequency",
+        "provenance_quality",
+        "expected_value",
+        "main_limitations",
+        "recommended_priority",
+        "review_status",
+    )
+    source_ids: set[str] = set()
+    for index, source in enumerate(sources):
+        if not isinstance(source, dict):
+            raise ConfigValidationError(f"{path}: sources[{index}] must be a mapping")
+        if not all(
+            isinstance(source.get(field), str) and source[field].strip() for field in required
+        ):
+            raise ConfigValidationError(f"{path}: sources[{index}] has missing string fields")
+        parsed = urlparse(source["url"])
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ConfigValidationError(f"{path}: sources[{index}].url must be HTTPS")
+        if source["category"] not in allowed_categories:
+            raise ConfigValidationError(f"{path}: sources[{index}] has invalid category")
+        if source["source_entity_type"] not in allowed_entity_types:
+            raise ConfigValidationError(f"{path}: sources[{index}] has invalid source_entity_type")
+        if source["review_status"] not in allowed_statuses:
+            raise ConfigValidationError(f"{path}: sources[{index}] has invalid review_status")
+        if source["recommended_priority"] not in allowed_priorities:
+            raise ConfigValidationError(
+                f"{path}: sources[{index}] has invalid recommended_priority"
+            )
+        if source.get("activate_in_production") is not False:
+            raise ConfigValidationError(
+                f"{path}: sources[{index}] must remain disabled for production"
+            )
+        source_id = source["source_id"]
+        if source_id in source_ids:
+            raise ConfigValidationError(f"{path}: duplicate source_id {source_id}")
+        source_ids.add(source_id)
+    return data
+
+
 def load_all_configs(config_dir: Path) -> dict[str, int]:
     watchlist = load_watchlist(config_dir / "watchlist.yaml")
     interests = load_research_interests(config_dir / "research_interests.yaml")
     load_career_preferences(config_dir / "career_preferences.yaml")
     salary = load_salary_rules(config_dir / "salary_rules.yaml")
     source_expansion = load_source_expansion(config_dir / "source_expansion.yaml")
+    source_discovery = load_source_discovery(config_dir / "source_discovery.yaml")
     return {
         "watchlist_targets": len(watchlist),
         "research_interests": len(interests["primary_interests"]),
@@ -336,4 +413,5 @@ def load_all_configs(config_dir: Path) -> dict[str, int]:
         "source_expansion_targets": sum(
             len(source_expansion[group]) for group in ("pilot_sources", "backlog")
         ),
+        "source_discovery_targets": len(source_discovery["sources"]),
     }

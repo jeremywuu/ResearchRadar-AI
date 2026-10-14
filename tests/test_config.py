@@ -7,6 +7,7 @@ from research_radar.config import (
     load_all_configs,
     load_career_preferences,
     load_research_interests,
+    load_source_discovery,
     load_source_expansion,
     load_watchlist,
     load_yaml,
@@ -23,6 +24,7 @@ def test_all_project_yaml_configuration_loads_and_validates() -> None:
     assert result["research_interests"] >= 10
     assert result["salary_weights_total"] == 100
     assert result["source_expansion_targets"] == 6
+    assert result["source_discovery_targets"] == 15
 
     interests = load_research_interests(PROJECT_ROOT / "config" / "research_interests.yaml")
     assert interests["research_identity"]["primary_field"] == (
@@ -131,3 +133,21 @@ def test_source_expansion_backlog_contains_only_verified_candidates() -> None:
     assert {item["implementation_status"] for item in expansion["backlog"]} == {
         "VERIFIED_CANDIDATE"
     }
+
+
+def test_source_discovery_registry_cannot_activate_production() -> None:
+    discovery = load_source_discovery(PROJECT_ROOT / "config" / "source_discovery.yaml")
+
+    assert len(discovery["sources"]) == 15
+    assert all(item["activate_in_production"] is False for item in discovery["sources"])
+
+
+def test_source_discovery_rejects_production_activation(tmp_path: Path) -> None:
+    path = tmp_path / "source_discovery.yaml"
+    source = (PROJECT_ROOT / "config" / "source_discovery.yaml").read_text()
+    path.write_text(
+        source.replace("activate_in_production: false", "activate_in_production: true", 1)
+    )
+
+    with pytest.raises(ConfigValidationError, match="disabled for production"):
+        load_source_discovery(path)
