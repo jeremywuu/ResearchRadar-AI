@@ -39,6 +39,10 @@ The workflow has two jobs:
 
 The workflow-level concurrency group permits only one active monitoring run for a given ref.
 Jobs have 15- and 35-minute limits. There is no `--apply` command in the workflow.
+Both jobs are pinned to `ubuntu-24.04` for the initial production period so a future
+`ubuntu-latest` migration cannot silently change the runner image. Review this pin during routine
+maintenance. The official checkout, Python setup, Google authentication, and artifact actions use
+Node.js 24-compatible major versions; report artifacts use `actions/upload-artifact@v7`.
 
 ## 3. Manual execution and deferred schedule
 

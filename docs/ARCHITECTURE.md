@@ -333,6 +333,9 @@ The deployed workflow currently keeps only `workflow_dispatch` until OIDC/WIF an
 read-only run are verified. A future daily mode changes the cron expression to `0 9 * * *`. The
 workflow file is the schedule's single source of truth. Concurrency prevents two runs for the same
 ref, job timeouts bound cost, and no workflow command contains `--apply`.
+The jobs are pinned to `ubuntu-24.04` during initial production operation. The concurrency group
+uses `cancel-in-progress: false`, so a queued manual or scheduled run cannot terminate an active
+GCS commit; the storage generation CAS remains the authoritative race safeguard.
 
 Private-repository GitHub Free compatibility avoids GitHub Environment dependencies. The workflow
 reads non-secret repository variables and checks the exact repository, `main` ref, and workflow

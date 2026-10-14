@@ -351,6 +351,8 @@ def test_weekly_workflow_is_manual_only_free_compatible_and_read_only() -> None:
 
     assert triggers == {"workflow_dispatch": ""}
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
+    assert workflow["jobs"]["test"]["runs-on"] == "ubuntu-24.04"
+    assert monitor["runs-on"] == "ubuntu-24.04"
     assert workflow["jobs"]["test"]["timeout-minutes"] == "15"
     assert monitor["timeout-minutes"] == "35"
     assert monitor["permissions"] == {"contents": "read", "id-token": "write"}
@@ -367,6 +369,8 @@ def test_weekly_workflow_is_manual_only_free_compatible_and_read_only() -> None:
     assert "jeremywuu/ResearchRadar-AI" in workflow_text
     assert "refs/heads/main" in workflow_text
     assert "weekly-monitoring.yml@refs/heads/main" in workflow_text
+    assert "actions/upload-artifact@v7" in workflow_text
+    assert "actions/upload-artifact@v4" not in workflow_text
     assert monitor["steps"][-1]["with"]["retention-days"] == "14"
 
 
