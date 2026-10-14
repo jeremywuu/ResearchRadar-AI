@@ -403,7 +403,7 @@ Status: complete for the read-only pilot.
 
 ## Milestone 5C.1A — Durable state architecture and local implementation
 
-Status: locally implemented; GCS provisioning and bootstrap await separate approval.
+Status: complete; local and GCS adapters share the validated schema-v2 contract.
 
 - Add one immutable snapshot contract with filesystem and GCS adapters.
 - Validate schemas, stable IDs, deterministic serialization, and layered checksums.
@@ -412,11 +412,11 @@ Status: locally implemented; GCS provisioning and bootstrap await separate appro
 - Preserve unavailable-source history and reject unsafe or all-failed state advancement.
 - Keep empty state in explicit bootstrap mode; never auto-upload a first baseline.
 - Correct semantic deadline reporting and isolate accepted counts per source.
-- Keep the deployed workflow stateless until bucket location, IAM, and migration are approved.
+- Kept the hosted workflow stateless until bucket location, IAM, and migration were approved.
 
 ## Milestone 5C.1B — GCS security and bootstrap preflight
 
-Status: locally implemented; no GCS resource or IAM grant exists yet.
+Status: complete; the private europe-west1 bucket, conditional IAM, and reviewed bootstrap exist.
 
 - Select `europe-west1` Standard with uniform access, enforced public-access prevention, seven-day
   soft delete, disabled versioning, and no completed-object deletion lifecycle.
@@ -431,6 +431,16 @@ Status: locally implemented; no GCS resource or IAM grant exists yet.
 - Keep the proposed bootstrap manifest and downloaded cloud evidence in Git-ignored review data.
 - Require separate approval for bucket creation, IAM, bootstrap upload, workflow integration, and
   every hosted validation run.
+
+## Milestone 5C.2A — GitHub Actions durable-state integration
+
+Status: implemented locally; first hosted state-commit execution requires separate approval.
+
+- Restore the authoritative GCS baseline before any official-source collection.
+- Fail closed on missing configuration, authentication, state, schema, or checksum failures.
+- Request separate read-only Sheets and read/write durable-state OAuth scopes through WIF ADC.
+- Commit only validated reconciled snapshots using immutable objects and pointer-generation CAS.
+- Keep the workflow manual-only and all Google Sheets operations read-only.
 
 ## Milestone 6 — Automation and reliability
 

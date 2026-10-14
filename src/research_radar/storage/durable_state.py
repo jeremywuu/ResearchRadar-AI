@@ -15,6 +15,7 @@ from typing import Any, Protocol
 STATE_SCHEMA_VERSION = 2
 SNAPSHOT_FILES = ("jobs.json", "phd.json", "events.json", "source_metadata.json")
 RECOVERY_HISTORY_LIMIT = 32
+GCS_READ_WRITE_SCOPES = ("https://www.googleapis.com/auth/devstorage.read_write",)
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
@@ -40,6 +41,7 @@ class StateRestoreResult:
     snapshot_id: str | None = None
     current_generation: str | int | None = None
     recovered_from_snapshot_id: str | None = None
+    record_counts: Mapping[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -264,6 +266,7 @@ class LocalFilesystemStateBackend:
                     restored,
                     generation,
                     current if snapshot_id != current else None,
+                    _snapshot_record_counts(target_dir),
                 )
             except StatePermissionError:
                 raise
@@ -381,15 +384,27 @@ class GoogleCloudStorageStateBackend:
         bucket = values.get("RESEARCH_RADAR_GCS_BUCKET", "").strip()
         if not bucket:
             raise DurableStateError("RESEARCH_RADAR_GCS_BUCKET is required for GCS state")
+        prefix = values.get("RESEARCH_RADAR_GCS_PREFIX", "").strip().strip("/")
+        if not prefix:
+            raise DurableStateError("RESEARCH_RADAR_GCS_PREFIX is required for GCS state")
         try:
-            from google.cloud import storage
+            default_credentials, client_factory, credential_errors = cls._load_official_libraries()
         except ImportError as exc:
             raise DurableStateError("install the 'gcs' extra to use GCS durable state") from exc
-        return cls(
-            storage.Client(),
-            bucket,
-            prefix=values.get("RESEARCH_RADAR_GCS_PREFIX", "researchradar/state/v1"),
-        )
+        try:
+            credentials, project = default_credentials(scopes=GCS_READ_WRITE_SCOPES)
+            client = client_factory(project=project, credentials=credentials)
+        except credential_errors as exc:
+            raise DurableStateError("could not authenticate GCS durable state") from exc
+        return cls(client, bucket, prefix=prefix)
+
+    @staticmethod
+    def _load_official_libraries() -> tuple[Any, Any, tuple[type[Exception], ...]]:
+        import google.auth
+        from google.auth.exceptions import DefaultCredentialsError, RefreshError
+        from google.cloud import storage
+
+        return google.auth.default, storage.Client, (DefaultCredentialsError, RefreshError)
 
     def restore(self, target_dir: Path) -> StateRestoreResult:
         pointer_blob = self.bucket.blob(f"{self.prefix}/current.json")
@@ -423,6 +438,7 @@ class GoogleCloudStorageStateBackend:
                     restored,
                     generation,
                     current if snapshot_id != current else None,
+                    _snapshot_record_counts(target_dir),
                 )
             except StatePermissionError:
                 raise
@@ -551,6 +567,18 @@ def _validate_request(request: StateCommitRequest) -> None:
         raise DurableStateError("preference configuration hash is required")
     if request.base_snapshot_id is not None and not _SAFE_ID.fullmatch(request.base_snapshot_id):
         raise DurableStateError("base_snapshot_id must be a safe snapshot identifier")
+
+
+def _snapshot_record_counts(snapshot_dir: Path) -> dict[str, int]:
+    return {
+        category: len(
+            _read_json_bytes(
+                (snapshot_dir / f"{category}.json").read_bytes(),
+                f"{category}.json",
+            ).get("records", [])
+        )
+        for category in ("jobs", "phd", "events")
+    }
 
 
 def _commit_base_snapshot(

@@ -363,8 +363,10 @@ is absent from the generation-matched recovery history.
 An empty backend is explicit bootstrap mode and is never auto-committed by a routine weekly run.
 Partial source runs may advance state only when at least one source succeeds and reconciliation is
 safe; unavailable-source records are copied forward with their previous facts and timestamps. The
-workflow still defaults to no durable backend. GCS remains disabled until its location, private
-bucket, bucket-scoped IAM, and initial migration are separately approved. See
+hosted workflow explicitly selects GCS, verifies the authoritative schema-v2 baseline before
+collection, and fails closed rather than using an empty runner directory. A validated successor is
+committed with the restored pointer generation as a CAS precondition. Sheets and GCS use separately
+scoped ADC credentials: `spreadsheets.readonly` and `devstorage.read_write`. See
 `DURABLE_STATE_DESIGN.md` and `GCS_SETUP_PLAN.md`.
 
 ## Security

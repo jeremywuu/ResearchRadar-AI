@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import pytest
 import yaml
 
 from research_radar.collectors.base import SourceCollectionResult, SourceDescriptor
@@ -14,6 +15,7 @@ from research_radar.models import (
 )
 from research_radar.pipelines import run_jobs_pipeline
 from research_radar.storage.durable_state import (
+    DurableStateError,
     LocalFilesystemStateBackend,
     StateCommitRequest,
 )
@@ -226,6 +228,26 @@ def test_empty_durable_backend_enters_bootstrap_without_committing(tmp_path: Pat
     assert not (tmp_path / "durable" / "current.json").exists()
 
 
+def test_explicit_cloud_state_fails_closed_before_collection(tmp_path: Path) -> None:
+    class CollectionMustNotRun:
+        def collect(self, *, observed_at: datetime) -> SourceCollectionResult:
+            pytest.fail("collection must not run without the authoritative baseline")
+
+    with pytest.raises(DurableStateError, match="authoritative durable baseline"):
+        run_weekly_monitor(
+            project_root=ROOT,
+            output_dir=tmp_path / "run",
+            state_dir=tmp_path / "legacy",
+            observed_at=NOW,
+            reference_date=date(2026, 10, 12),
+            adapter=PilotMemoryAdapter(),
+            adapters={"must_not_run": CollectionMustNotRun()},
+            state_backend=LocalFilesystemStateBackend(tmp_path / "empty-durable"),
+            require_durable_baseline=True,
+            run_id="cloud-run-1",
+        )
+
+
 def test_existing_durable_state_is_restored_reconciled_and_committed(tmp_path: Path) -> None:
     initial = run_weekly_monitor(
         project_root=ROOT,
@@ -266,6 +288,12 @@ def test_existing_durable_state_is_restored_reconciled_and_committed(tmp_path: P
     assert result.state_commit is not None
     assert result.state_commit.snapshot_id == "cloud-run-2"
     assert result.plan.preview.workbook.plans["jobs"].insert_count == 1
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "Restored snapshot ID: `bootstrap-1`" in report
+    assert "Restored records: jobs=1; phd=0; events=0; total=1" in report
+    assert "GCS/durable-state commit: committed `cloud-run-2`" in report
+    assert "Observation-only changes:" in report
+    assert "Not observed opportunities:" in report
 
 
 def test_weekly_deadlines_are_semantically_labeled_without_alias_duplicates(
@@ -330,6 +358,10 @@ def test_weekly_workflow_is_manual_only_free_compatible_and_read_only() -> None:
     assert monitor["env"]["RESEARCH_RADAR_SHEETS_ENV"] == "live-pilot"
     assert monitor["env"]["RESEARCH_RADAR_DATA_MODE"] == "live"
     assert monitor["env"]["RESEARCH_RADAR_GOOGLE_READ_ONLY"] == "1"
+    assert monitor["env"]["RESEARCH_RADAR_GCS_BUCKET"] == ("${{ vars.RESEARCH_RADAR_GCS_BUCKET }}")
+    assert monitor["env"]["RESEARCH_RADAR_GCS_PREFIX"] == ("${{ vars.RESEARCH_RADAR_GCS_PREFIX }}")
+    assert 'python -m pip install -e ".[sheets,gcs]"' in workflow_text
+    assert "--state-backend gcs" in workflow_text
     assert "--apply" not in workflow_text
     assert "GOOGLE_SPREADSHEET_ID" not in workflow_text
     assert "jeremywuu/ResearchRadar-AI" in workflow_text

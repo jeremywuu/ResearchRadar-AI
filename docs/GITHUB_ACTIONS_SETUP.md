@@ -125,6 +125,8 @@ Actions → Variables**. They identify resources but are not credentials:
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | Full provider resource name using the project number |
 | `GCP_SERVICE_ACCOUNT` | Dedicated reader service-account email |
 | `GOOGLE_LIVE_PILOT_SPREADSHEET_ID` | The dedicated LIVE PILOT ID |
+| `RESEARCH_RADAR_GCS_BUCKET` | `researchradar-state-310248522001-euw1` |
+| `RESEARCH_RADAR_GCS_PREFIX` | `researchradar/state/v1` |
 
 The workflow sets these non-secret safety values itself:
 
@@ -138,9 +140,10 @@ Do not add OAuth refresh tokens, ADC files, or service-account JSON as GitHub se
 
 ## 6. State persistence
 
-GitHub-hosted runners are ephemeral. The ignored local `data/live/` directory is not present on a
-new runner, so the first pilot can collect and compare current candidates with LIVE PILOT but
-cannot reliably classify every record as new, changed, or not observed across runs.
+GitHub-hosted runners are ephemeral. The workflow therefore restores the verified schema-v2 GCS
+snapshot before any source collection and commits a validated successor only after reconciliation
+and a safe Sheets dry-run. GCS mode fails closed when configuration, authentication, the current
+pointer, schema, or checksums are invalid; it never falls back to an empty runner directory.
 
 | Option | Durable history | Trade-off |
 |---|---|---|
@@ -150,16 +153,10 @@ cannot reliably classify every record as new, changed, or not observed across ru
 | Git state branch | Durable | Requires repository write permission and conflict management |
 | Private versioned GCS bucket | Yes | Recommended; small storage/operation cost is possible |
 
-The recommended next step is a private GCS bucket with uniform access, object versioning or
-immutable timestamped snapshots, lifecycle deletion, and generation-match preconditions. Store the
-four current snapshot files under a stable prefix and archive prior generations under timestamped
-paths. Grant the workflow identity bucket-scoped object read/create/update permissions only; do
-not grant broad project storage roles. This backend is deliberately not provisioned or used in
-Milestone 5A.
-
-Until that backend is configured, every weekly brief states that durable cross-run change
-detection is unavailable. The uploaded current snapshot must not be treated as authoritative
-permanent history.
+The deployed bucket uses uniform access, public-access prevention, immutable snapshot and commit
+objects, and a generation-matched `current.json` pointer. Runtime IAM is bucket- and
+object-condition scoped; it has no project-wide Storage role. The authoritative initial baseline
+is `bootstrap-preflight-38369663706-v2` (30 jobs, one PhD programme, and two events).
 
 ## 7. Reports and artifacts
 
@@ -169,7 +166,7 @@ After a run:
 2. Read the Markdown brief in the job summary.
 3. Download `researchradar-weekly-RUN_ID` from the run's **Artifacts** section.
 
-The artifact contains the brief, current local snapshot, dry-run review, and fingerprint artifact.
+The artifact contains the brief, restored/reconciled snapshot, dry-run review, and fingerprint.
 It is retained for 14 days. GitHub supports per-artifact `retention-days`; see
 [artifact storage documentation](https://docs.github.com/actions/configuring-and-managing-workflows/persisting-workflow-data-using-artifacts).
 Feedback notes are never rendered in the report or job summary.
@@ -185,12 +182,13 @@ For private repositories, current included quotas depend on the account plan. Gi
 [Actions billing documentation](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 currently lists 2,000 minutes and 500 MB artifact storage per month for GitHub Free, and 3,000
 minutes plus 1 GB for GitHub Pro. These allowances are shared with other eligible usage and can
-change. Configure a budget; do not assume the workflow is permanently zero-cost. GCS is not used by
-this milestone and would require a separate cost review before activation.
+change. Configure a budget; do not assume the workflow is permanently zero-cost. The small GCS
+JSON state also incurs regional storage and Class A/B operation charges, expected to remain small
+at weekly cadence but still subject to current Google Cloud pricing.
 
 ## 9. Troubleshooting
 
-- **Missing provider or service account:** set all three environment variables above.
+- **Missing cloud configuration:** set all five repository variables above.
 - **OIDC permission denied:** verify `id-token: write`, the full provider resource name, attribute
   mappings, numeric repository/owner IDs, ref/workflow conditions, and
   `roles/iam.workloadIdentityUser`.
@@ -199,8 +197,8 @@ this milestone and would require a separate cost review before activation.
 - **Workbook identity failure:** confirm the ID and exact title `ResearchRadar AI — LIVE PILOT`.
 - **Source BLOCKED/FAILED:** inspect the report; do not bypass 403, robots rules, CAPTCHA, or
   anti-bot controls.
-- **No durable baseline:** expected in the initial pilot. Do not interpret missing records as
-  closures or trust artifact retention as permanent state.
+- **No durable baseline:** this is a hard failure in configured GCS mode. Verify the bucket,
+  prefix, WIF identity, pointer, manifest, and checksums; never bootstrap automatically.
 - **Workflow does not run:** scheduled workflows execute from the default branch; verify Actions is
   enabled and the workflow is present there.
 
@@ -212,4 +210,4 @@ this milestone and would require a separate cost review before activation.
 - No feedback notes in logs or reports.
 - No paid search, LLM, or database service.
 - No source-access bypass.
-- No durable-state claim until a reviewed backend is configured.
+- Durable-state permissions are confined to the approved prefix and exact mutable pointer.

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from research_radar.storage.durable_state import (
+    GCS_READ_WRITE_SCOPES,
     DurableStateError,
     GoogleCloudStorageStateBackend,
     LocalFilesystemStateBackend,
@@ -207,6 +208,70 @@ def test_manifest_pointer_mismatch_is_rejected(tmp_path: Path) -> None:
 def test_gcs_backend_requires_explicit_bucket_configuration() -> None:
     with pytest.raises(DurableStateError, match="RESEARCH_RADAR_GCS_BUCKET"):
         GoogleCloudStorageStateBackend.from_environment({})
+
+
+def test_gcs_backend_requires_explicit_prefix_configuration() -> None:
+    with pytest.raises(DurableStateError, match="RESEARCH_RADAR_GCS_PREFIX"):
+        GoogleCloudStorageStateBackend.from_environment(
+            {"RESEARCH_RADAR_GCS_BUCKET": "private-state"}
+        )
+
+
+def test_gcs_backend_uses_explicit_storage_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, object] = {}
+    client = FakeClient()
+
+    def credentials(*, scopes: tuple[str, ...]) -> tuple[object, str]:
+        calls["scopes"] = scopes
+        return object(), "researchradar-ai"
+
+    def client_factory(*, project: str, credentials: object) -> FakeClient:
+        calls["project"] = project
+        calls["credentials"] = credentials
+        return client
+
+    monkeypatch.setattr(
+        GoogleCloudStorageStateBackend,
+        "_load_official_libraries",
+        staticmethod(lambda: (credentials, client_factory, (RuntimeError,))),
+    )
+
+    backend = GoogleCloudStorageStateBackend.from_environment(
+        {
+            "RESEARCH_RADAR_GCS_BUCKET": "private-state",
+            "RESEARCH_RADAR_GCS_PREFIX": "researchradar/state/v1",
+        }
+    )
+
+    assert backend.bucket is client.value
+    assert calls["scopes"] == GCS_READ_WRITE_SCOPES
+    assert calls["project"] == "researchradar-ai"
+
+
+def test_gcs_backend_reports_failed_credential_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CredentialFailure(Exception):
+        pass
+
+    def credentials(*, scopes: tuple[str, ...]) -> tuple[object, str]:
+        raise CredentialFailure("credential detail must not be exposed")
+
+    monkeypatch.setattr(
+        GoogleCloudStorageStateBackend,
+        "_load_official_libraries",
+        staticmethod(lambda: (credentials, object, (CredentialFailure,))),
+    )
+
+    with pytest.raises(DurableStateError, match="authenticate GCS durable state"):
+        GoogleCloudStorageStateBackend.from_environment(
+            {
+                "RESEARCH_RADAR_GCS_BUCKET": "private-state",
+                "RESEARCH_RADAR_GCS_PREFIX": "researchradar/state/v1",
+            }
+        )
 
 
 class PreconditionFailed(Exception):

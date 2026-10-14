@@ -23,6 +23,7 @@ from research_radar.live_integration import (
 from research_radar.models import AcademicEvent, IndustryJob, PhDOpportunity, SourceHealth
 from research_radar.storage.durable_state import (
     DurableStateBackend,
+    DurableStateError,
     StateCommitRequest,
     StateCommitResult,
     StateRestoreResult,
@@ -59,12 +60,15 @@ def run_weekly_monitor(
     adapter: SheetsAdapter,
     adapters: dict[str, OfficialSourceAdapter] | None = None,
     state_backend: DurableStateBackend | None = None,
+    require_durable_baseline: bool = False,
     run_id: str | None = None,
 ) -> WeeklyRunResult:
     """Collect approved sources and build a read-only Sheets plan and weekly brief."""
 
     if observed_at.tzinfo is None:
         raise ValueError("observed_at must be timezone-aware")
+    if require_durable_baseline and state_backend is None:
+        raise DurableStateError("an authoritative durable baseline backend is required")
     output_dir.mkdir(parents=True, exist_ok=True)
     state_restore: StateRestoreResult | None = None
     current_generation: str | int | None = None
@@ -76,6 +80,8 @@ def run_weekly_monitor(
     durable_baseline = (
         state_restore.available if state_restore is not None else _has_complete_snapshot(state_dir)
     )
+    if require_durable_baseline and not durable_baseline:
+        raise DurableStateError("authoritative durable baseline is missing")
     analysis: FreshObservationAnalysis | None = None
     if durable_baseline:
         fresh = collect_fresh_observation(
@@ -109,16 +115,6 @@ def run_weekly_monitor(
         reference_date=reference_date,
         adapter=adapter,
     )
-    report_path = output_dir / "researchradar_weekly_brief.md"
-    _write_weekly_report(
-        report_path,
-        plan=plan,
-        sources=collection.sources,
-        analysis=analysis,
-        observed_at=observed_at,
-        reference_date=reference_date,
-        durable_baseline=durable_baseline,
-    )
     successes = sum(result.health in _SUCCESS_HEALTH for result in collection.sources.values())
     issues = len(collection.sources) - successes
     plans = (*plan.preview.workbook.plans.values(), plan.preview.watchlist_plan)
@@ -127,6 +123,7 @@ def run_weekly_monitor(
         or any(item.invalid_records or item.conflicts for item in plans)
     )
     state_commit = None
+    state_commit_status = "disabled"
     unsafe_observation = analysis is not None and any(
         item.status is FreshObservationStatus.NEEDS_REVIEW for item in analysis.changes
     )
@@ -137,20 +134,52 @@ def run_weekly_monitor(
         and not unsafe_plan
         and not unsafe_observation
     ):
-        state_commit = state_backend.commit(
-            snapshot_dir,
-            StateCommitRequest(
-                run_id=run_id or observed_at.strftime("run-%Y%m%dT%H%M%S.%fZ"),
-                committed_at=observed_at,
-                preference_configuration_hash=plan.preview.preference_configuration_hash,
-                source_health={
-                    source_id: result.health.value
-                    for source_id, result in collection.sources.items()
-                },
-                base_snapshot_id=(state_restore.snapshot_id if state_restore is not None else None),
-            ),
-            expected_current_generation=current_generation,
-        )
+        try:
+            state_commit = state_backend.commit(
+                snapshot_dir,
+                StateCommitRequest(
+                    run_id=run_id or observed_at.strftime("run-%Y%m%dT%H%M%S.%fZ"),
+                    committed_at=observed_at,
+                    preference_configuration_hash=plan.preview.preference_configuration_hash,
+                    source_health={
+                        source_id: result.health.value
+                        for source_id, result in collection.sources.items()
+                    },
+                    base_snapshot_id=(
+                        state_restore.snapshot_id if state_restore is not None else None
+                    ),
+                ),
+                expected_current_generation=current_generation,
+            )
+            state_commit_status = f"committed `{state_commit.snapshot_id}`"
+        except DurableStateError as exc:
+            report_path = output_dir / "researchradar_weekly_brief.md"
+            _write_weekly_report(
+                report_path,
+                plan=plan,
+                sources=collection.sources,
+                analysis=analysis,
+                observed_at=observed_at,
+                reference_date=reference_date,
+                durable_baseline=durable_baseline,
+                state_restore=state_restore,
+                state_commit_status=f"failed safely ({exc.__class__.__name__})",
+            )
+            raise
+    elif state_backend is not None:
+        state_commit_status = "not committed because validation or collection was unsafe"
+    report_path = output_dir / "researchradar_weekly_brief.md"
+    _write_weekly_report(
+        report_path,
+        plan=plan,
+        sources=collection.sources,
+        analysis=analysis,
+        observed_at=observed_at,
+        reference_date=reference_date,
+        durable_baseline=durable_baseline,
+        state_restore=state_restore,
+        state_commit_status=state_commit_status,
+    )
     return WeeklyRunResult(
         report_path=report_path,
         snapshot_dir=snapshot_dir,
@@ -177,6 +206,8 @@ def _write_weekly_report(
     observed_at: datetime,
     reference_date: date,
     durable_baseline: bool,
+    state_restore: StateRestoreResult | None = None,
+    state_commit_status: str = "disabled",
 ) -> None:
     preview = plan.preview
     successful = [item for item in sources.values() if item.health in _SUCCESS_HEALTH]
@@ -188,6 +219,12 @@ def _write_weekly_report(
         new_count = analysis.counts[FreshObservationStatus.NEW]
         meaningful_count = analysis.counts[FreshObservationStatus.CONTENT_CHANGED]
         change_summary = f"NEW={new_count}; CONTENT_CHANGED={meaningful_count}"
+    observation_only_count = (
+        analysis.counts[FreshObservationStatus.OBSERVATION_ONLY_CHANGED] if analysis else 0
+    )
+    not_observed_count = analysis.counts[FreshObservationStatus.NOT_OBSERVED] if analysis else 0
+    restored_counts = dict(state_restore.record_counts or {}) if state_restore else {}
+    restored_total = sum(restored_counts.values())
 
     lines = [
         "# RESEARCHRADAR WEEKLY BRIEF",
@@ -206,6 +243,17 @@ def _write_weekly_report(
         f"{meaningful_count if analysis else 'unknown without durable state'}",
         f"- Cross-run change detection: {change_summary}",
         f"- Durable baseline available: {'yes' if durable_baseline else 'no'}",
+        "- Restored snapshot ID: "
+        + (
+            f"`{state_restore.snapshot_id}`"
+            if state_restore and state_restore.snapshot_id
+            else "none"
+        ),
+        "- Restored records: "
+        f"jobs={restored_counts.get('jobs', 0)}; phd={restored_counts.get('phd', 0)}; "
+        f"events={restored_counts.get('events', 0)}; total={restored_total}",
+        f"- Observation-only changes: {observation_only_count}",
+        f"- Not observed opportunities: {not_observed_count}",
         "",
     ]
     deadlines = _approaching_deadlines(plan, reference_date)
@@ -272,6 +320,7 @@ def _write_weekly_report(
             f"- Feedback records loaded: {len(preview.feedback.feedback_by_id)}",
             "- Personal feedback notes are intentionally omitted from this report.",
             "- Google Sheets writes: disabled",
+            f"- GCS/durable-state commit: {state_commit_status}",
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

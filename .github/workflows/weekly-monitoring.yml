@@ -40,6 +40,8 @@ jobs:
       id-token: write
     env:
       GOOGLE_LIVE_PILOT_SPREADSHEET_ID: ${{ vars.GOOGLE_LIVE_PILOT_SPREADSHEET_ID }}
+      RESEARCH_RADAR_GCS_BUCKET: ${{ vars.RESEARCH_RADAR_GCS_BUCKET }}
+      RESEARCH_RADAR_GCS_PREFIX: ${{ vars.RESEARCH_RADAR_GCS_PREFIX }}
       RESEARCH_RADAR_SHEETS_ENV: live-pilot
       RESEARCH_RADAR_DATA_MODE: live
       RESEARCH_RADAR_GOOGLE_READ_ONLY: "1"
@@ -56,6 +58,8 @@ jobs:
           test -n "$WIF_PROVIDER"
           test -n "$WIF_SERVICE_ACCOUNT"
           test -n "$GOOGLE_LIVE_PILOT_SPREADSHEET_ID"
+          test -n "$RESEARCH_RADAR_GCS_BUCKET"
+          test -n "$RESEARCH_RADAR_GCS_PREFIX"
       - id: auth
         name: Authenticate to Google Cloud with OIDC
         uses: google-github-actions/auth@v3
@@ -68,14 +72,15 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install project with Sheets support
-        run: python -m pip install -e ".[sheets]"
+      - name: Install project with Sheets and GCS support
+        run: python -m pip install -e ".[sheets,gcs]"
       - id: weekly
         name: Collect and prepare read-only weekly plan
         run: |
           research-radar weekly-run \
             --live \
             --project-root . \
+            --state-backend gcs \
             --state-dir data/automation/state/live \
             --output-dir data/automation/run \
             --reference-date "$(date -u +%F)"
@@ -89,7 +94,7 @@ jobs:
           name: researchradar-weekly-${{ github.run_id }}
           path: |
             data/automation/run/researchradar_weekly_brief.md
-            data/automation/run/current/
+            data/automation/run/restored-state/
             data/automation/run/sheets-review/
           if-no-files-found: warn
           retention-days: 14

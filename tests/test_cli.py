@@ -113,6 +113,39 @@ def test_weekly_run_missing_cloud_credentials_is_reported_without_collection(
     assert "missing cloud credentials" in capsys.readouterr().out  # type: ignore[attr-defined]
 
 
+def test_weekly_gcs_selection_requires_authoritative_baseline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    backend = object()
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "research_radar.cli._required_live_pilot_adapter", lambda **_: SimpleNamespace()
+    )
+    monkeypatch.setattr(
+        "research_radar.cli.GoogleCloudStorageStateBackend.from_environment",
+        lambda: backend,
+    )
+
+    def weekly(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            source_successes=1,
+            source_issues=0,
+            durable_baseline_available=True,
+            plan=SimpleNamespace(plan_fingerprint="fingerprint"),
+            report_path=tmp_path / "report.md",
+            state_restore=None,
+            state_commit=None,
+            exit_code=0,
+        )
+
+    monkeypatch.setattr("research_radar.cli.run_weekly_monitor", weekly)
+
+    assert main(["weekly-run", "--live", "--state-backend", "gcs"]) == 0
+    assert captured["state_backend"] is backend
+    assert captured["require_durable_baseline"] is True
+
+
 def test_cli_live_sheets_preview_is_offline_and_never_writes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: object
 ) -> None:

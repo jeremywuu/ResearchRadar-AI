@@ -7,14 +7,14 @@ authoritative baseline for cross-run change detection. ResearchRadar now exposes
 contract with two implementations:
 
 - `LocalFilesystemStateBackend` for offline development and recovery testing.
-- `GoogleCloudStorageStateBackend` for a future explicitly configured cloud deployment.
+- `GoogleCloudStorageStateBackend` for the explicitly configured hosted workflow.
 
 Both adapters restore and commit the same four existing snapshot files. They do not introduce a
 second opportunity model, scoring engine, or feedback store. Google Sheets remains authoritative
 for preference, Saved, Hidden, and Personal Notes; those notes are not copied into durable state.
 
-The weekly workflow still defaults to `--state-backend none`. GCS is not used until a bucket,
-bucket-scoped IAM, workflow variables, and an approved bootstrap are configured separately.
+The CLI still defaults to `--state-backend none` for local safety. The hosted workflow explicitly
+selects GCS and requires the already committed authoritative baseline before collection starts.
 
 ## Logical snapshot
 
@@ -103,9 +103,9 @@ base. The backend verifies that this base still belongs to the generation-matche
 history; an unrelated or stale base is a conflict. The rejected newer snapshot remains in the
 fallback inventory for diagnosis, but is not misrepresented as the new snapshot's valid parent.
 
-An empty backend returns `available=false`. This is explicit bootstrap mode: the weekly monitor may
-produce a report and Sheets dry-run, but it does not classify the run against invented history and
-does not automatically create the first authoritative commit.
+An empty backend returns `available=false`. Local callers may use that result for an explicitly
+reviewed bootstrap workflow, but routine hosted GCS monitoring sets `require_durable_baseline` and
+fails before collection. It never classifies against invented history or auto-creates a baseline.
 
 ## Partial source failures
 
@@ -131,16 +131,17 @@ research-radar weekly-run --live \
   --output-dir data/automation/run
 ```
 
-Future GCS runs use `--state-backend gcs` plus:
+Hosted GCS runs use `--state-backend gcs` plus both required variables:
 
 ```text
 RESEARCH_RADAR_GCS_BUCKET
-RESEARCH_RADAR_GCS_PREFIX  # optional; defaults to researchradar/state/v1
+RESEARCH_RADAR_GCS_PREFIX
 ```
 
-No bucket name is hardcoded. The ordinary workflow currently omits `--state-backend gcs`, so a
-missing bucket cannot accidentally change cloud behavior. Every mode remains read-only with
-respect to Google Sheets.
+No bucket name is hardcoded. Missing configuration or an unavailable authoritative pointer aborts
+the hosted run before collection. Sheets credentials continue to request only
+`spreadsheets.readonly`; the GCS client separately requests `devstorage.read_write`. Every mode
+remains read-only with respect to Google Sheets.
 
 ## Security boundary
 

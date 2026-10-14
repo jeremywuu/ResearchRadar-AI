@@ -131,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--state-backend",
         choices=("none", "local", "gcs"),
         default="none",
-        help="durable state adapter; default keeps the cloud workflow in safe stateless mode",
+        help="durable state adapter; local runs remain stateless unless explicitly configured",
     )
     weekly.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
     return parser
@@ -300,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
                 reference_date=args.reference_date,
                 adapter=adapter,
                 state_backend=state_backend,
+                require_durable_baseline=args.state_backend == "gcs",
                 run_id=os.environ.get("GITHUB_RUN_ID"),
             )
             print("ResearchRadar weekly monitoring completed (read-only)")
