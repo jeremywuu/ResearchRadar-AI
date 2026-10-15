@@ -485,6 +485,28 @@ Acceptance evidence:
 - All pilot sources remain disabled for production; weekly scheduling, GCS state, Sheets, and IAM
   are unchanged.
 
+## Milestone 6.1B — Research source production preview
+
+Status: complete locally; production activation remains unauthorized.
+
+- Restore the current 48-record authoritative GCS snapshot through the read-only backend.
+- Collect only CMU Neural Computation, Paradromics, and RLDM into an ignored isolated preview.
+- Compare stable and semantic identities without committing a snapshot.
+- Audit research-role function separately from domain fit and recommendation priority.
+- Read LIVE PILOT and build a hypothetical dry-run with no Google Sheets writes.
+- Keep all pilots outside `default_adapters()` and preserve the active production schedule.
+
+Acceptance evidence:
+
+- GCS snapshot `38565510105` restored with the expected checksum, generation, schema, and 45/1/2
+  counts; the pointer remained unchanged.
+- Paradromics returned nine listings and three verified roles: clinical implementation, technical
+  platform, and research-adjacent BCI decoding engineering.
+- RLDM retained its stable ID, Paris dates, and January 20 AoE abstract deadline with no duplicate.
+- CMU remained one informational programme profile and zero open Fall 2028 opportunities.
+- The Sheets dry-run proposed three job and one event inserts with zero updates, invalid records,
+  conflicts, GCS writes, or Sheets writes.
+
 ## Later phases
 
 - Reliable salary benchmarking and trends

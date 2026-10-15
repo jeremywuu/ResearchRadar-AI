@@ -261,7 +261,8 @@ class ParadromicsCareersAdapter:
             "neuroscience",
             "decoding algorithm",
         )
-        if not any(marker in text.casefold() for marker in domain_markers):
+        role_evidence = _role_evidence(text, domain_markers)
+        if not role_evidence:
             raise _RoleNotRelevant("detail page lacks role-specific BCI or neural-data evidence")
 
         research_areas = _research_areas(text)
@@ -332,6 +333,25 @@ class ParadromicsCareersAdapter:
                 "Paradromics official careers page links to this JazzHR posting",
                 f"Role-specific source text connects {title} to BCI or neural-data work",
             ],
+            "role_evidence": role_evidence,
+            "research_responsibility_evidence": _sentences_with(
+                text,
+                (
+                    "research",
+                    "experiment",
+                    "study",
+                    "model",
+                    "decoding",
+                    "neural data",
+                    "signal processing",
+                ),
+            ),
+            "clinical_implementation_evidence": _sentences_with(
+                text,
+                ("clinical", "patient", "surgery", "hospital", "field support", "training"),
+            ),
+            "experience_requirement_detail": _experience_requirement(text),
+            "work_authorization_detail": _work_authorization_evidence(text),
             "extraction_method": "deterministic_html_patterns",
             "adapter_source_id": self.source.source_id,
         }
@@ -419,6 +439,7 @@ class Rldm2027EventAdapter:
             "starts_on": "2027-07-06",
             "ends_on": "2027-07-09",
             "submission_deadline": deadline.isoformat() if deadline else None,
+            "submission_deadline_timezone": "AoE" if deadline else None,
             "registration_deadline": None,
             "event_type": "academic conference",
             "research_areas": [
@@ -447,3 +468,71 @@ def milestone_6_pilot_adapters() -> dict[str, object]:
         Rldm2027EventAdapter(),
     ]
     return {adapter.source.source_id: adapter for adapter in adapters}
+
+
+def _sentences(text: str) -> list[str]:
+    return [
+        " ".join(sentence.split())
+        for sentence in re.split(r"(?<=[.!?])\s+|\s*[•·]\s*", text)
+        if sentence.strip()
+    ]
+
+
+def _sentences_with(text: str, markers: tuple[str, ...], *, limit: int = 4) -> list[str]:
+    matching = [
+        sentence
+        for sentence in _sentences(text)
+        if any(marker in sentence.casefold() for marker in markers)
+    ]
+    return matching[:limit]
+
+
+def _role_evidence(text: str, domain_markers: tuple[str, ...]) -> list[str]:
+    responsibility_markers = (
+        "analy",
+        "build",
+        "collect",
+        "decode",
+        "deploy",
+        "design",
+        "develop",
+        "evaluate",
+        "implement",
+        "process",
+        "record",
+        "research",
+        "support",
+        "train",
+        "work with",
+    )
+    return [
+        sentence
+        for sentence in _sentences_with(text, domain_markers, limit=8)
+        if any(marker in sentence.casefold() for marker in responsibility_markers)
+    ][:4]
+
+
+def _first_sentence_matching(text: str, pattern: str) -> str | None:
+    expression = re.compile(pattern, re.I)
+    return next((sentence for sentence in _sentences(text) if expression.search(sentence)), None)
+
+
+def _experience_requirement(text: str) -> str | None:
+    match = re.search(
+        r"\b\d+\+?\s+years?\s+of\s+(?:professional\s+)?experience(?:\s+relevant\s+to\s+this\s+role)?",
+        text,
+        re.I,
+    )
+    return " ".join(match.group(0).split()) if match else None
+
+
+def _work_authorization_evidence(text: str) -> str | None:
+    match = re.search(
+        r"Are you legally authorized to work in the United States\??",
+        text,
+        re.I,
+    )
+    if match:
+        return "Are you legally authorized to work in the United States?"
+    match = re.search(r"[^.]{0,100}(?:visa sponsorship|work authorization)[^.]{0,100}", text, re.I)
+    return " ".join(match.group(0).split()) if match else None

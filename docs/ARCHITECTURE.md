@@ -303,6 +303,12 @@ feasibility, entity type, provenance quality, limitations, and review priority, 
 lab, and faculty profiles continue to use `SourceCollectionResult.informational_profiles`, while
 only cycle-specific, actionable evidence enters an opportunity pipeline.
 
+The `source-preview` command is a one-way production-preview seam. Its durable-state dependency
+exposes only `restore`, it has no `--apply` option, and it passes the reviewed pilot snapshot
+through existing normalization, scoring, provenance, and Sheets dry-run paths. Reconciled data and
+reports stay under ignored local storage. The command cannot commit GCS state or apply a Sheets
+plan, and the pilots remain outside `default_adapters()`.
+
 ## Score reconciliation and informational source profiles
 
 Live Sheets planning now forms its desired set from two independent sets: provenance-valid new

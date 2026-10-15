@@ -25,6 +25,7 @@ from research_radar.live_integration import (
 )
 from research_radar.sheets_demo import build_demo_sheets_adapter
 from research_radar.sheets_live import run_live_demo_sync
+from research_radar.source_preview import run_source_production_preview
 from research_radar.storage.durable_state import (
     DurableStateError,
     GoogleCloudStorageStateBackend,
@@ -134,6 +135,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="durable state adapter; local runs remain stateless unless explicitly configured",
     )
     weekly.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
+    preview = subparsers.add_parser(
+        "source-preview",
+        help="restore durable state and preview reviewed research sources without cloud writes",
+    )
+    preview.add_argument("--live", action="store_true", required=True)
+    preview.add_argument("--project-root", type=Path, default=Path.cwd())
+    preview.add_argument(
+        "--output-dir", type=Path, default=Path("data/review/milestone_6/production_preview")
+    )
+    preview.add_argument("--state-backend", choices=("gcs",), required=True)
+    preview.add_argument("--reference-date", type=date.fromisoformat, default=date.today())
     return parser
 
 
@@ -284,6 +296,42 @@ def main(argv: list[str] | None = None) -> int:
             or any(source.health.value in failed_health for source in result.sources.values())
         )
     try:
+        if args.command == "source-preview":
+            if os.environ.get("RESEARCH_RADAR_GOOGLE_READ_ONLY", "").strip().casefold() not in {
+                "1",
+                "true",
+                "yes",
+            }:
+                raise LiveDataError("RESEARCH_RADAR_GOOGLE_READ_ONLY=1 is required for preview")
+            result = run_source_production_preview(
+                project_root=args.project_root,
+                output_dir=args.output_dir,
+                observed_at=datetime.now(UTC),
+                reference_date=args.reference_date,
+                state_reader=GoogleCloudStorageStateBackend.from_environment(),
+                sheets_adapter=_required_live_pilot_adapter(),
+            )
+            print("Research source production preview completed (read-only)")
+            print(f"restored snapshot: {result.restored.snapshot_id}")
+            print(f"restored records: {dict(result.restored.record_counts or {})}")
+            for source_id, source in sorted(result.collection.sources.items()):
+                print(
+                    f"{source_id}: {source.health.value}; fetched={source.records_fetched}; "
+                    f"extracted={len(source.records)}; "
+                    f"profiles={len(source.informational_profiles)}"
+                )
+            print(f"duplicate conflicts: {len(result.duplicate_conflicts)}")
+            print(f"plan fingerprint: {result.sheets_plan.plan_fingerprint}")
+            print(f"report: {result.report_path}")
+            print(f"weekly brief preview: {result.weekly_brief_path}")
+            print("GCS writes: 0; Google Sheets writes: 0")
+            return int(
+                bool(result.duplicate_conflicts)
+                or any(
+                    source.health.value in {"FAILED", "BLOCKED", "UNSUPPORTED"}
+                    for source in result.collection.sources.values()
+                )
+            )
         if args.command == "weekly-run":
             observed_at = datetime.now(UTC)
             adapter = _required_live_pilot_adapter()

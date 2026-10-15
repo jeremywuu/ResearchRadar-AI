@@ -14,6 +14,7 @@ from research_radar.collectors.service import default_adapters
 from research_radar.config import load_source_discovery
 from research_radar.models import DomainFitClassification, SourceHealth
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline
+from research_radar.source_preview import ResearchRoleFit, audit_paradromics_role
 
 NOW = datetime(2026, 10, 14, 9, 0, tzinfo=UTC)
 ROOT = Path(__file__).resolve().parents[1]
@@ -220,6 +221,72 @@ def test_paradromics_irrelevant_candidate_is_excluded_without_technical_error() 
     assert result.informational_profiles[0]["profile_type"] == "LOW_DOMAIN_EVIDENCE_ROLE"
 
 
+def test_bci_employer_boilerplate_is_not_role_level_evidence() -> None:
+    careers = ParadromicsCareersAdapter.source.retrieval_url
+    role = "https://paradromicsinc.applytojob.com/apply/abc123/Software-Engineer"
+    routes = {
+        **robots_routes("paradromics.com"),
+        **robots_routes("paradromicsinc.applytojob.com"),
+        careers: response(
+            careers,
+            f'<a href="{role}">Software Engineer Oakland, CA Apply</a>',
+        ),
+        role: response(
+            role,
+            """
+            <h1>Software Engineer</h1>
+            <p>Build internal billing tools.</p>
+            <h2>About Paradromics</h2>
+            <p>Paradromics is a brain-computer interface company.</p>
+            """,
+        ),
+    }
+
+    result = ParadromicsCareersAdapter(HttpClient(transport=RouteTransport(routes))).collect(
+        observed_at=NOW
+    )
+
+    assert result.health is SourceHealth.SUCCESS_NO_MATCHES
+    assert result.records == []
+    assert result.errors == []
+
+
+def test_clinical_bci_role_is_audited_separately_from_domain_score() -> None:
+    raw = ParadromicsCareersAdapter()._extract_job(
+        "https://paradromicsinc.applytojob.com/apply/clinical/Field-Clinical-Specialist-Engineer",
+        "Field Clinical Specialist/Engineer",
+        "Austin, TX",
+        """
+        <h1>Field Clinical Specialist/Engineer</h1>
+        <p>Support clinical BCI procedures and train hospital teams working with neural data.</p>
+        """,
+    )
+    processed = run_jobs_pipeline([raw], config_dir=ROOT / "config", observed_at=NOW).records[0]
+
+    audit = audit_paradromics_role(processed)
+
+    assert audit.role_fit is ResearchRoleFit.CLINICAL_IMPLEMENTATION
+    assert "do not establish a research position" in audit.reason
+
+
+def test_bci_decoding_software_role_remains_research_adjacent() -> None:
+    raw = ParadromicsCareersAdapter()._extract_job(
+        "https://paradromicsinc.applytojob.com/apply/software/Software-Engineer",
+        "Software Engineer",
+        "Oakland, CA",
+        """
+        <h1>Software Engineer</h1>
+        <p>Develop clinical applications for a BCI system.</p>
+        <p>Realize BCI decoding algorithms and evaluate them with real neural data.</p>
+        """,
+    )
+    processed = run_jobs_pipeline([raw], config_dir=ROOT / "config", observed_at=NOW).records[0]
+
+    audit = audit_paradromics_role(processed)
+
+    assert audit.role_fit is ResearchRoleFit.RESEARCH_ADJACENT_ENGINEERING
+
+
 def _rldm_routes() -> dict[str, HttpResponse | Exception]:
     home = Rldm2027EventAdapter.source.retrieval_url
     call = Rldm2027EventAdapter._CALL_URL
@@ -255,6 +322,7 @@ def test_rldm_extracts_distinct_event_and_submission_deadline() -> None:
     assert record["starts_on"] == "2027-07-06"
     assert record["ends_on"] == "2027-07-09"
     assert record["submission_deadline"] == "2027-01-20"
+    assert record["submission_deadline_timezone"] == "AoE"
     assert record["registration_deadline"] is None
     assert record["location"] == "Paris"
 
