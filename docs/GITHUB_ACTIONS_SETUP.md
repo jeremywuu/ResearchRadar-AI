@@ -126,6 +126,7 @@ Actions → Variables**. They identify resources but are not credentials:
 | `GOOGLE_LIVE_PILOT_SPREADSHEET_ID` | The dedicated LIVE PILOT ID |
 | `RESEARCH_RADAR_GCS_BUCKET` | `researchradar-state-310248522001-euw1` |
 | `RESEARCH_RADAR_GCS_PREFIX` | `researchradar/state/v1` |
+| `RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED` | Leave unset or `false` until a separately authorized activation |
 
 The workflow sets these non-secret safety values itself:
 
@@ -134,6 +135,10 @@ RESEARCH_RADAR_SHEETS_ENV=live-pilot
 RESEARCH_RADAR_DATA_MODE=live
 RESEARCH_RADAR_GOOGLE_READ_ONLY=1
 ```
+
+The workflow passes `RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED` from repository variables. A missing
+variable is safely interpreted as false. Setting it to true changes source collection and therefore
+requires a separately authorized cloud acceptance run; it never changes Sheets read-only mode.
 
 Do not add OAuth refresh tokens, ADC files, or service-account JSON as GitHub secrets.
 

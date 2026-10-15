@@ -2,7 +2,8 @@
 
 ## Decision boundary
 
-This milestone prepares, but does not activate, two opportunity sources:
+This milestone prepared two opportunity sources. Milestone 6.1C-B wires them into the production
+registry behind a default-false feature flag, without enabling that flag:
 
 | Source ID | Mode | Readiness | Production active |
 |---|---|---|---|
@@ -10,8 +11,10 @@ This milestone prepares, but does not activate, two opportunity sources:
 | `paradromics_careers_pilot` | industry jobs | conditional on role-function gate | no |
 | `cmu_neural_computation_profile` | informational PhD watch | informational only | no |
 
-`default_adapters()` is unchanged. The active Monday 09:00 Europe/Brussels workflow and its
-source list are therefore unchanged.
+`default_adapters()` returns the original six sources while
+`RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED` is absent or false. With an explicit true value it adds
+only Paradromics and RLDM. The active Monday 09:00 Europe/Brussels workflow reads the repository
+variable, which remains unset/false for this deployment.
 
 ## Research-role suitability gate
 
@@ -78,23 +81,33 @@ an explicit transition from profile to announced cycle/opening, faculty recruitm
 a report section that never mixes profiles with open opportunities. This milestone does not add a
 parallel database.
 
-## Exact future production activation diff
+## Production activation seam
 
-A separately authorized deployment would:
+A separately authorized flag activation will:
 
-1. Import `ParadromicsCareersAdapter` and `Rldm2027EventAdapter` into the production collector
-   module and append only those two adapters to `default_adapters()`.
+1. Set `RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED=true` after a controlled cloud-run authorization;
+   no further adapter-registry code change is required.
 2. Keep `CmuNeuralComputationProgramAdapter` out of the opportunity adapter registry.
-3. Change the reviewed activation configuration for RLDM and Paradromics only; retain CMU as
-   informational and inactive.
+3. Retain CMU as informational and inactive.
 4. Run one restore-first production-style dry-run, confirm RLDM semantic deduplication and the
    three Paradromics effective placements, then review the proposed GCS successor.
 5. Commit no Google Sheets changes; all Sheets behavior remains dry-run/read-only.
 
 Expected added request budget per monitoring run is two RLDM HTML pages plus the Paradromics
 careers page, robots checks, and at most the existing bounded relevant-role detail requests.
-Rollback is removal of the two adapters from `default_adapters()` and restoration of their
-activation flags; historical GCS observations remain immutable and are not deleted.
+Rollback is setting the repository variable to false for future runs; historical GCS observations
+remain immutable and are not deleted.
+
+## Three collected jobs versus two proposed inserts
+
+Paradromics produced three valid canonical opportunities. Collection and history retain all three.
+The Sheets admission policy independently admits only `HIGH_PRIORITY` and `RELEVANT` effective
+recommendations. The Field Clinical Specialist/Engineer retains `CORE_DOMAIN_FIT` but is classified
+as `CLINICAL_IMPLEMENTATION`, making its effective recommendation `NEEDS_REVIEW`; it is therefore
+held from the proposed Sheets insertion and Top Research Matches. Embedded Software Engineer and
+Software Engineer remain insertable in their technical and research-adjacent placements. This is
+a recommendation-filtering result, not source filtering, deletion, deduplication, or a missing
+record.
 
 ## Safety verification
 

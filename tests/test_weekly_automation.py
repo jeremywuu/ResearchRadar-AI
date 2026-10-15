@@ -436,6 +436,9 @@ def test_weekly_workflow_has_approved_schedule_and_remains_read_only() -> None:
     assert monitor["env"]["RESEARCH_RADAR_SHEETS_ENV"] == "live-pilot"
     assert monitor["env"]["RESEARCH_RADAR_DATA_MODE"] == "live"
     assert monitor["env"]["RESEARCH_RADAR_GOOGLE_READ_ONLY"] == "1"
+    assert monitor["env"]["RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED"] == (
+        "${{ vars.RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED }}"
+    )
     assert monitor["env"]["RESEARCH_RADAR_GCS_BUCKET"] == ("${{ vars.RESEARCH_RADAR_GCS_BUCKET }}")
     assert monitor["env"]["RESEARCH_RADAR_GCS_PREFIX"] == ("${{ vars.RESEARCH_RADAR_GCS_PREFIX }}")
     assert 'python -m pip install -e ".[sheets,gcs]"' in workflow_text

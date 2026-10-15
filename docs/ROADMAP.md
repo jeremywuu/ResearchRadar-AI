@@ -520,6 +520,20 @@ Status: implemented locally; source activation and push remain unauthorized.
 - Keep CMU Neural Computation as an informational programme watch, not an open PhD feed.
 - Preserve schema-v2 GCS compatibility and perform only read-only baseline verification.
 
+## Milestone 6.1C-B — Controlled research-source deployment
+
+Status: implementation complete; the production feature flag remains disabled pending a separate
+cloud-run authorization.
+
+- Add Paradromics and RLDM to the existing production registry only when
+  `RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED` is explicitly true.
+- Preserve the original six-source registry exactly when the flag is absent or false.
+- Keep CMU Neural Computation informational-only and outside the opportunity feed in both modes.
+- Preserve all three valid Paradromics canonical records while holding the clinical implementation
+  role from automatic Sheets admission and Top Research Matches.
+- Keep Google Sheets read-only, GCS schema v2 unchanged, and the Monday 09:00 Europe/Brussels
+  schedule intact.
+
 ## Later phases
 
 - Reliable salary benchmarking and trends

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import pytest
+
 from research_radar.collectors.http import HttpClient, HttpResponse, HttpRetrievalError
 from research_radar.collectors.pilot import (
     CmuNeuralComputationProgramAdapter,
@@ -10,7 +12,11 @@ from research_radar.collectors.pilot import (
     Rldm2027EventAdapter,
     milestone_6_pilot_adapters,
 )
-from research_radar.collectors.service import default_adapters
+from research_radar.collectors.service import (
+    RESEARCH_SOURCES_ENABLED_ENV,
+    default_adapters,
+    research_sources_enabled,
+)
 from research_radar.config import load_source_discovery
 from research_radar.models import DomainFitClassification, SourceHealth
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline
@@ -62,15 +68,57 @@ def test_review_registry_is_disabled_and_has_expected_coverage() -> None:
     }
 
 
-def test_pilot_adapters_are_not_registered_for_production() -> None:
+def test_research_sources_are_fail_closed_by_default() -> None:
     pilot_ids = set(milestone_6_pilot_adapters())
+    production_ids = set(default_adapters(environment={}))
 
     assert pilot_ids == {
         "cmu_neural_computation_profile",
         "paradromics_careers_pilot",
         "rldm_2027_official_pilot",
     }
-    assert pilot_ids.isdisjoint(default_adapters())
+    assert production_ids == {
+        "anthropic_greenhouse",
+        "ucl_gatsby_phd",
+        "cosyne_official",
+        "ccn_2027_official",
+        "cmu_cognitive_neuroscience_phd",
+        "neuroelectrics_personio",
+    }
+    assert pilot_ids.isdisjoint(production_ids)
+
+
+def test_research_source_flag_adds_only_approved_opportunity_feeds() -> None:
+    adapters = default_adapters(environment={RESEARCH_SOURCES_ENABLED_ENV: "true"})
+
+    assert set(adapters) == {
+        "anthropic_greenhouse",
+        "ucl_gatsby_phd",
+        "cosyne_official",
+        "ccn_2027_official",
+        "cmu_cognitive_neuroscience_phd",
+        "neuroelectrics_personio",
+        "paradromics_careers_pilot",
+        "rldm_2027_official_pilot",
+    }
+    assert "cmu_neural_computation_profile" not in adapters
+
+
+@pytest.mark.parametrize("configured", ("", "0", "false", "no", "off", "FALSE"))
+def test_research_source_flag_false_values_preserve_six_sources(configured: str) -> None:
+    assert research_sources_enabled({RESEARCH_SOURCES_ENABLED_ENV: configured}) is False
+    assert len(default_adapters(environment={RESEARCH_SOURCES_ENABLED_ENV: configured})) == 6
+
+
+@pytest.mark.parametrize("configured", ("1", "true", "yes", "on", "TRUE"))
+def test_research_source_flag_true_values_enable_two_sources(configured: str) -> None:
+    assert research_sources_enabled({RESEARCH_SOURCES_ENABLED_ENV: configured}) is True
+    assert len(default_adapters(environment={RESEARCH_SOURCES_ENABLED_ENV: configured})) == 8
+
+
+def test_research_source_flag_rejects_ambiguous_values() -> None:
+    with pytest.raises(ValueError, match=RESEARCH_SOURCES_ENABLED_ENV):
+        default_adapters(environment={RESEARCH_SOURCES_ENABLED_ENV: "enabled"})
 
 
 def test_cmu_neural_computation_is_profile_not_open_fall_2028_opportunity() -> None:

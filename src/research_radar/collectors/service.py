@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -18,6 +20,7 @@ from research_radar.collectors.official import (
     NeuroelectricsCareersAdapter,
     UclGatsbyPhdAdapter,
 )
+from research_radar.collectors.pilot import ParadromicsCareersAdapter, Rldm2027EventAdapter
 from research_radar.models import (
     ExecutionReport,
     ExtractionStatus,
@@ -36,7 +39,14 @@ class LiveCollectionReport:
     metadata_path: Path
 
 
-def default_adapters() -> dict[str, OfficialSourceAdapter]:
+RESEARCH_SOURCES_ENABLED_ENV = "RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED"
+
+
+def default_adapters(
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, OfficialSourceAdapter]:
+    """Build the production registry, with research pilots behind an explicit flag."""
+
     adapters: list[OfficialSourceAdapter] = [
         AnthropicGreenhouseAdapter(),
         UclGatsbyPhdAdapter(),
@@ -45,7 +55,23 @@ def default_adapters() -> dict[str, OfficialSourceAdapter]:
         CmuCognitiveNeuroscienceProgramAdapter(),
         NeuroelectricsCareersAdapter(),
     ]
+    if research_sources_enabled(environment):
+        adapters.extend((ParadromicsCareersAdapter(), Rldm2027EventAdapter()))
     return {adapter.source.source_id: adapter for adapter in adapters}
+
+
+def research_sources_enabled(environment: Mapping[str, str] | None = None) -> bool:
+    """Read the fail-closed production research-source feature flag."""
+
+    values = os.environ if environment is None else environment
+    configured = values.get(RESEARCH_SOURCES_ENABLED_ENV, "").strip().casefold()
+    if configured in {"", "0", "false", "no", "off"}:
+        return False
+    if configured in {"1", "true", "yes", "on"}:
+        return True
+    raise ValueError(
+        f"{RESEARCH_SOURCES_ENABLED_ENV} must be an explicit boolean value; got {configured!r}"
+    )
 
 
 def collect_live(

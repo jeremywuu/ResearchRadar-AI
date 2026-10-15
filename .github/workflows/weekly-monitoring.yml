@@ -48,6 +48,7 @@ jobs:
       RESEARCH_RADAR_SHEETS_ENV: live-pilot
       RESEARCH_RADAR_DATA_MODE: live
       RESEARCH_RADAR_GOOGLE_READ_ONLY: "1"
+      RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED: ${{ vars.RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED }}
     steps:
       - uses: actions/checkout@v7
       - name: Validate cloud configuration

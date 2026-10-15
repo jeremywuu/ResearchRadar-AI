@@ -122,10 +122,11 @@ Nothing in this milestone writes live opportunities to Google Sheets.
 
 ## Milestone 6 research-discovery pilots
 
-Research discovery pilots are deliberately separate from `default_adapters()`. Their reviewed
-metadata lives in `config/source_discovery.yaml`, where every entry must keep
-`activate_in_production: false`. Passing an offline parser test or a bounded source check does not
-activate weekly monitoring.
+Research discovery metadata lives in `config/source_discovery.yaml`, where every entry remains
+review-only with `activate_in_production: false`. Passing an offline parser test or a bounded
+source check does not activate weekly monitoring. The production registry uses the explicit
+`RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED` environment flag: false or absent preserves exactly the
+original six sources; true adds only Paradromics and RLDM. Ambiguous flag values fail closed.
 
 The initial pilots are:
 
@@ -138,8 +139,8 @@ The initial pilots are:
   abstract submission deadline in separate fields.
 
 These adapters use the same verified HTTP client, robots checks, source result contract,
-normalizers, stable-ID generation, and scoring pipelines as production. Activation requires a
-separate review and explicit registration change.
+normalizers, stable-ID generation, and scoring pipelines as production. CMU remains preview-only;
+it is never added to the ordinary PhD opportunity feed by the feature flag.
 
 ## TLS troubleshooting
 

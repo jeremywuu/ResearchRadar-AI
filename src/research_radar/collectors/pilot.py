@@ -1,7 +1,7 @@
-"""Offline-only Milestone 6 source pilots.
+"""Reviewed Milestone 6 research-source adapters.
 
-These adapters deliberately are not registered by ``default_adapters``.  They can be
-exercised with injected transports in tests or invoked explicitly during a reviewed pilot.
+Paradromics and RLDM can be added to ``default_adapters`` only through its explicit feature flag.
+CMU Neural Computation remains available only through preview or test configuration.
 """
 
 from __future__ import annotations

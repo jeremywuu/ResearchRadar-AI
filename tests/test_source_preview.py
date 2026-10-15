@@ -138,6 +138,56 @@ def _job() -> dict[str, object]:
     }
 
 
+def _paradromics_regression_jobs() -> list[dict[str, object]]:
+    clinical = {
+        **_job(),
+        "title": "Field Clinical Specialist/Engineer",
+        "official_job_id": "ujxQN2lhPz",
+        "source_url": (
+            "https://paradromicsinc.applytojob.com/apply/ujxQN2lhPz/"
+            "Field-Clinical-Specialist-Engineer"
+        ),
+        "location": "Austin, TX",
+        "role_evidence": [
+            "Support implantable BCI use during surgical procedures and clinical study visits."
+        ],
+        "research_responsibility_evidence": [
+            "Support implantable BCI use during surgical procedures and clinical study visits."
+        ],
+    }
+    embedded = {
+        **_job(),
+        "title": "Embedded Software Engineer",
+        "official_job_id": "u5hXN4N9ID",
+        "source_url": (
+            "https://paradromicsinc.applytojob.com/apply/u5hXN4N9ID/Embedded-Software-Engineer"
+        ),
+        "location": "Austin, TX",
+        "research_areas": ["Computational neuroscience"],
+        "role_evidence": [
+            "Build low-latency embedded software for high-fidelity brain machine implants."
+        ],
+        "research_responsibility_evidence": [
+            "Build low-latency embedded software for high-fidelity brain machine implants."
+        ],
+    }
+    software = {
+        **_job(),
+        "official_job_id": "r7CgYCDBNk",
+        "source_url": ("https://paradromicsinc.applytojob.com/apply/r7CgYCDBNk/Software-Engineer"),
+        "role_evidence": [
+            "Develop BCI data curation strategies and decoding algorithms; evaluate software "
+            "with real neural data using Python, machine learning, and signal processing."
+        ],
+        "research_responsibility_evidence": [
+            "Develop BCI data curation strategies and decoding algorithms; evaluate software "
+            "with real neural data using Python, machine learning, and signal processing."
+        ],
+        "experience_requirement": "3+ years professional experience",
+    }
+    return [clinical, embedded, software]
+
+
 def _event() -> dict[str, object]:
     return {
         "fictional": False,
@@ -223,6 +273,50 @@ def test_production_preview_restores_and_plans_without_cloud_or_sheets_writes(
         RecommendationClassification.HIGH_PRIORITY,
         RecommendationClassification.RELEVANT,
     }
+
+
+def test_three_collected_paradromics_jobs_remain_canonical_while_two_are_insertable(
+    tmp_path: Path,
+) -> None:
+    reader = CopyingStateReader(_empty_snapshot(tmp_path / "baseline"))
+    sheets = PreviewSheetsAdapter()
+    adapters = {
+        "paradromics_careers_pilot": StaticPilotAdapter(
+            "paradromics_careers_pilot",
+            "jobs",
+            records=_paradromics_regression_jobs(),
+        )
+    }
+
+    result = run_source_production_preview(
+        project_root=ROOT,
+        output_dir=tmp_path / "preview",
+        observed_at=NOW,
+        reference_date=date(2026, 10, 15),
+        state_reader=reader,
+        sheets_adapter=sheets,
+        adapters=adapters,
+    )
+
+    collected = result.collection.execution.pipelines["jobs"].records
+    inserts = result.sheets_plan.preview.workbook.plans["jobs"].inserts
+    decisions = result.sheets_plan.preview.recommendations.by_record_id
+
+    assert len(collected) == 3
+    assert len(inserts) == 2
+    assert {processed.opportunity.opportunity_id for processed in collected} == set(decisions)
+    clinical_id = next(
+        processed.opportunity.opportunity_id
+        for processed in collected
+        if processed.opportunity.title == "Field Clinical Specialist/Engineer"
+    )
+    assert decisions[clinical_id].role_function is RoleFunction.CLINICAL_IMPLEMENTATION
+    assert (
+        decisions[clinical_id].effective_classification is RecommendationClassification.NEEDS_REVIEW
+    )
+    assert clinical_id not in {operation.row["Record_ID"] for operation in inserts}
+    assert reader.commit_calls == 0
+    assert sheets.write_operations == []
 
 
 def test_rldm_semantic_duplicate_with_different_id_is_reported(tmp_path: Path) -> None:

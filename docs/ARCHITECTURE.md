@@ -304,16 +304,20 @@ HTTPS URL, and implementation state.
 
 `source_discovery.yaml` is the Milestone 6 review registry. It records accessibility, extraction
 feasibility, entity type, provenance quality, limitations, and review priority, and requires
-`activate_in_production: false` for every entry. Offline pilot adapters live outside
-`default_adapters()`; adding one to this registry cannot change the weekly source list. Programme,
-lab, and faculty profiles continue to use `SourceCollectionResult.informational_profiles`, while
-only cycle-specific, actionable evidence enters an opportunity pipeline.
+`activate_in_production: false` for every entry. The registry itself cannot change weekly
+collection. `default_adapters()` has a fail-closed
+`RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED` seam: absent or false returns the original six adapters;
+true adds only Paradromics and RLDM. CMU Neural Computation remains outside the opportunity-feed
+registry. Programme, lab, and faculty profiles continue to use
+`SourceCollectionResult.informational_profiles`, while only cycle-specific, actionable evidence
+enters an opportunity pipeline.
 
 The `source-preview` command is a one-way production-preview seam. Its durable-state dependency
 exposes only `restore`, it has no `--apply` option, and it passes the reviewed pilot snapshot
 through existing normalization, scoring, provenance, and Sheets dry-run paths. Reconciled data and
 reports stay under ignored local storage. The command cannot commit GCS state or apply a Sheets
-plan, and the pilots remain outside `default_adapters()`.
+plan. It continues to include all three reviewed pilots explicitly, independent of the production
+feature flag.
 
 ## Score reconciliation and informational source profiles
 
