@@ -31,6 +31,11 @@ from research_radar.models import (
     UserFeedback,
 )
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline, run_phd_pipeline
+from research_radar.role_function import (
+    RoleDisplayGroup,
+    RoleFunction,
+    assess_role_function,
+)
 from research_radar.storage.sheets import (
     WATCHLIST_SCHEMA,
     FeedbackLoadResult,
@@ -124,6 +129,9 @@ class RecommendationDecision:
     methodological_fit: float
     research_question_fit: float
     explanation: str
+    effective_classification: RecommendationClassification
+    role_function: RoleFunction | None = None
+    display_group: RoleDisplayGroup | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +147,15 @@ class RecommendationReport:
         return {
             classification: sum(
                 decision.classification is classification for decision in self.decisions
+            )
+            for classification in RecommendationClassification
+        }
+
+    @property
+    def effective_counts(self) -> dict[RecommendationClassification, int]:
+        return {
+            classification: sum(
+                decision.effective_classification is classification for decision in self.decisions
             )
             for classification in RecommendationClassification
         }
@@ -698,9 +715,12 @@ def _incremental_plan_payload(preview: LiveSheetsPreview) -> dict[str, Any]:
         "recommendations": {
             decision.record_id: {
                 "classification": decision.classification.value,
+                "effective_classification": decision.effective_classification.value,
                 "domain_fit": decision.domain_fit.value,
                 "methodological_fit": decision.methodological_fit,
                 "research_question_fit": decision.research_question_fit,
+                "role_function": decision.role_function.value if decision.role_function else None,
+                "display_group": decision.display_group.value if decision.display_group else None,
             }
             for decision in sorted(
                 preview.recommendations.decisions, key=lambda item: item.record_id
@@ -894,7 +914,7 @@ def _validate_initial_live_pilot_plan(
             problems.append(f"planned record source is not verified official: {record_id}")
         if not audit.valid:
             problems.append(f"planned record provenance is blocked: {record_id}")
-        if decision.classification not in {
+        if decision.effective_classification not in {
             RecommendationClassification.HIGH_PRIORITY,
             RecommendationClassification.RELEVANT,
         }:
@@ -1311,7 +1331,7 @@ def classify_recommendations(
                     "treating technical fit as core research relevance."
                 )
             decisions.append(
-                RecommendationDecision(
+                _recommendation_decision(
                     record_id=opportunity.opportunity_id,
                     category=category,
                     classification=classification,
@@ -1319,9 +1339,62 @@ def classify_recommendations(
                     methodological_fit=processed.score.components["methodological_fit"],
                     research_question_fit=processed.score.components["research_question_fit"],
                     explanation=explanation,
+                    opportunity=opportunity,
                 )
             )
     return RecommendationReport(decisions=tuple(decisions))
+
+
+def _recommendation_decision(
+    *,
+    record_id: str,
+    category: str,
+    classification: RecommendationClassification,
+    domain_fit: DomainFitClassification,
+    methodological_fit: float,
+    research_question_fit: float,
+    explanation: str,
+    opportunity: Any,
+) -> RecommendationDecision:
+    effective = classification
+    role_function = None
+    display_group = None
+    if isinstance(opportunity, IndustryJob):
+        assessment = assess_role_function(opportunity)
+        role_function = assessment.classification
+        display_group = assessment.display_group
+        if domain_fit is DomainFitClassification.INSUFFICIENT_EVIDENCE or role_function in {
+            RoleFunction.CLINICAL_IMPLEMENTATION,
+            RoleFunction.UNKNOWN,
+        }:
+            effective = RecommendationClassification.NEEDS_REVIEW
+        elif role_function is RoleFunction.NON_RESEARCH:
+            effective = RecommendationClassification.LOW_PRIORITY
+        elif (
+            role_function is RoleFunction.TECHNICAL_PLATFORM
+            and classification is RecommendationClassification.HIGH_PRIORITY
+        ):
+            effective = RecommendationClassification.RELEVANT
+        if effective is RecommendationClassification.LOW_PRIORITY:
+            display_group = RoleDisplayGroup.LOW_PRIORITY
+        elif (
+            effective is RecommendationClassification.NEEDS_REVIEW
+            and role_function is not RoleFunction.TECHNICAL_PLATFORM
+        ):
+            display_group = RoleDisplayGroup.NEEDS_REVIEW
+        explanation = f"{explanation} Role-function gate: {assessment.explanation}"
+    return RecommendationDecision(
+        record_id=record_id,
+        category=category,
+        classification=classification,
+        domain_fit=domain_fit,
+        methodological_fit=methodological_fit,
+        research_question_fit=research_question_fit,
+        explanation=explanation,
+        effective_classification=effective,
+        role_function=role_function,
+        display_group=display_group,
+    )
 
 
 def _classify_job_recommendation(
@@ -1400,7 +1473,7 @@ def _recommended_execution(
     recommended_ids = {
         decision.record_id
         for decision in recommendations.decisions
-        if decision.classification
+        if decision.effective_classification
         in {RecommendationClassification.HIGH_PRIORITY, RecommendationClassification.RELEVANT}
     }
     allowed_ids = valid_ids & recommended_ids
@@ -1425,7 +1498,7 @@ def _syncable_execution(
     recommended_ids = {
         decision.record_id
         for decision in recommendations.decisions
-        if decision.classification
+        if decision.effective_classification
         in {RecommendationClassification.HIGH_PRIORITY, RecommendationClassification.RELEVANT}
     }
     sheet_by_category = {
@@ -1544,7 +1617,7 @@ def _write_review_report(
     action_by_id = _planned_actions(workbook, provenance)
     audit_by_id = {record.record_id: record for record in provenance.records}
     decision_by_id = recommendations.by_record_id
-    counts = recommendations.counts
+    counts = recommendations.effective_counts
     lines = [
         "# ResearchRadar Live Data Review",
         "",
@@ -1594,17 +1667,18 @@ def _write_review_report(
                 heading,
                 "",
                 "| Record_ID | Title | Organization | Category | Research | PhD | Career stage | "
-                "Domain fit | Method | Question | Recommendation | Education | Salary | "
+                "Domain fit | Method | Question | Base recommendation | Effective recommendation | "
+                "Role function | Education | Salary | "
                 "Official URL | Verification | Missing | "
                 "Proposed action | Explanation |",
-                "|---|---|---|---|---:|---:|---|---|---:|---:|---|---|---|---|---|---|---|---|",
+                "|---|---|---|---|---:|---:|---|---|---:|---:|---|---|---|---|---|---|---|---|---|---|",
             ]
         )
         for category, report in execution.pipelines.items():
             for processed in report.records:
                 opportunity = processed.opportunity
                 decision = decision_by_id[opportunity.opportunity_id]
-                if decision.classification not in classifications:
+                if decision.effective_classification not in classifications:
                     continue
                 audit = audit_by_id[opportunity.opportunity_id]
                 research, phd = _review_scores(processed)
@@ -1634,6 +1708,8 @@ def _write_review_report(
                             f"{decision.methodological_fit:.1f}",
                             f"{decision.research_question_fit:.1f}",
                             decision.classification.value,
+                            decision.effective_classification.value,
+                            decision.role_function.value if decision.role_function else "—",
                             _md(education),
                             _md(salary),
                             _md(_opportunity_url(opportunity)),
@@ -1662,7 +1738,11 @@ def _write_review_report(
                     f"- Category: `{category}`",
                     f"- Adapter source: `{opportunity.adapter_source_id or 'missing'}`",
                     f"- Source retrieved: `{opportunity.source_retrieved_at}`",
-                    f"- Recommendation: `{decision.classification.value}`",
+                    f"- Base recommendation: `{decision.classification.value}`",
+                    f"- Effective recommendation: `{decision.effective_classification.value}`",
+                    "- Role function: `"
+                    + (decision.role_function.value if decision.role_function else "NOT_APPLICABLE")
+                    + "`",
                     f"- Recommendation explanation: {_md(decision.explanation)}",
                     f"- Source-stated facts: {_md('; '.join(audit.source_stated_facts) or 'None')}",
                     f"- Normalized information: {_md('; '.join(audit.normalized_information))}",
@@ -1698,9 +1778,9 @@ def _proposed_action(
 ) -> str:
     if not audit.valid:
         return "BLOCKED_PROVENANCE"
-    if decision.classification is RecommendationClassification.NEEDS_REVIEW:
+    if decision.effective_classification is RecommendationClassification.NEEDS_REVIEW:
         return "HOLD_FOR_REVIEW"
-    if decision.classification is RecommendationClassification.LOW_PRIORITY:
+    if decision.effective_classification is RecommendationClassification.LOW_PRIORITY:
         return "LOCAL_ARCHIVE"
     return planned_action or "PLAN_CONFLICT"
 

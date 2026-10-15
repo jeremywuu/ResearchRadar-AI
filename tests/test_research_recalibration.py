@@ -22,6 +22,7 @@ from research_radar.models import (
     PreferenceFeedback,
 )
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline, run_phd_pipeline
+from research_radar.role_function import RoleDisplayGroup, RoleFunction
 from research_radar.storage.json_store import JsonOutputStore
 from research_radar.storage.sheets import InMemorySheetsAdapter, sheet_rows_from_report
 
@@ -47,6 +48,12 @@ def job_record(**overrides: object) -> dict[str, object]:
         "working_language": None,
         "salary": {},
         "source_evidence": ["Official job ID JOB-1", "Title: Research Engineer"],
+        "role_evidence": [
+            "Conduct research and design experiments to analyze neural representations."
+        ],
+        "research_responsibility_evidence": [
+            "Conduct research and design experiments to analyze neural representations."
+        ],
         "source_verification_status": "VERIFIED_OFFICIAL",
         "source_type": "official_fixture",
         "extraction_method": "deterministic_test_parser",
@@ -123,6 +130,44 @@ def test_neuroai_and_neural_decoding_can_be_high_priority() -> None:
 
     assert processed.score.domain_fit is DomainFitClassification.CORE_DOMAIN_FIT
     assert decision.classification is RecommendationClassification.HIGH_PRIORITY
+
+
+def test_clinical_implementation_keeps_domain_score_but_is_gated_for_review() -> None:
+    processed, decision = _decision(
+        job_record(
+            title="Field Clinical Specialist/Engineer",
+            research_areas=["Neural encoding and decoding", "Brain-computer interfaces"],
+            role_evidence=[
+                "Support implantable BCI use during surgical procedures and clinical study visits."
+            ],
+            research_responsibility_evidence=[
+                "Support implantable BCI use during surgical procedures and clinical study visits."
+            ],
+        )
+    )
+
+    assert processed.score.domain_fit is DomainFitClassification.CORE_DOMAIN_FIT
+    assert decision.classification is RecommendationClassification.HIGH_PRIORITY
+    assert decision.role_function is RoleFunction.CLINICAL_IMPLEMENTATION
+    assert decision.effective_classification is RecommendationClassification.NEEDS_REVIEW
+    assert decision.display_group is RoleDisplayGroup.NEEDS_REVIEW
+
+
+def test_platform_role_is_displayed_as_transferable_without_changing_score() -> None:
+    processed, decision = _decision(
+        job_record(
+            title="Embedded Firmware Engineer",
+            research_areas=["Computational neuroscience"],
+            role_evidence=["Build embedded firmware and low-latency hardware interfaces."],
+            research_responsibility_evidence=[
+                "Build embedded firmware and low-latency hardware interfaces."
+            ],
+        )
+    )
+
+    assert processed.score.domain_fit is DomainFitClassification.ADJACENT_DOMAIN_FIT
+    assert decision.role_function is RoleFunction.TECHNICAL_PLATFORM
+    assert decision.display_group is RoleDisplayGroup.TRANSFERABLE_TECHNICAL
 
 
 def test_transferable_phd_required_role_remains_discoverable_future_target() -> None:

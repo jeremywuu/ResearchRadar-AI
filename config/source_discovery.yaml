@@ -17,6 +17,7 @@ sources:
     main_limitations: "No admission cycle or Fall 2028 opening stated"
     recommended_priority: "P0"
     review_status: "READY_FOR_PILOT"
+    activation_readiness: "INFORMATIONAL_WATCH_ONLY"
     activate_in_production: false
 
   - source_id: "princeton_neuroscience_profile"
@@ -170,6 +171,7 @@ sources:
     main_limitations: "Most company roles remain unrelated engineering and must be filtered"
     recommended_priority: "P0"
     review_status: "READY_FOR_PILOT"
+    activation_readiness: "CONDITIONAL_ROLE_FUNCTION_GATE"
     activate_in_production: false
 
   - source_id: "blackrock_neurotech_careers_discovery"
@@ -204,6 +206,7 @@ sources:
     main_limitations: "Submission portal link is not yet available"
     recommended_priority: "P1"
     review_status: "READY_FOR_PILOT"
+    activation_readiness: "APPROVED_FOR_PRODUCTION_PREPARATION"
     activate_in_production: false
 
   - source_id: "ccn_2027_inventory"

@@ -350,6 +350,11 @@ def load_source_discovery(path: Path) -> dict[str, Any]:
         "OFFICIAL_CAREERS_SOURCE",
         "EVENT_EDITION",
     }
+    allowed_activation_readiness = {
+        "INFORMATIONAL_WATCH_ONLY",
+        "CONDITIONAL_ROLE_FUNCTION_GATE",
+        "APPROVED_FOR_PRODUCTION_PREPARATION",
+    }
     required = (
         "source_id",
         "organization",
@@ -391,6 +396,11 @@ def load_source_discovery(path: Path) -> dict[str, Any]:
         if source.get("activate_in_production") is not False:
             raise ConfigValidationError(
                 f"{path}: sources[{index}] must remain disabled for production"
+            )
+        readiness = source.get("activation_readiness")
+        if readiness is not None and readiness not in allowed_activation_readiness:
+            raise ConfigValidationError(
+                f"{path}: sources[{index}] has invalid activation_readiness"
             )
         source_id = source["source_id"]
         if source_id in source_ids:

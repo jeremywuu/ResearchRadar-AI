@@ -21,6 +21,7 @@ from research_radar.live_integration import (
     prepare_incremental_live_sync,
 )
 from research_radar.models import AcademicEvent, IndustryJob, PhDOpportunity, SourceHealth
+from research_radar.role_function import RoleDisplayGroup
 from research_radar.storage.durable_state import (
     DurableStateBackend,
     DurableStateError,
@@ -261,16 +262,33 @@ def _write_weekly_report(
     for title, label, deadline, url in deadlines:
         lines.append(f"  - [{title}]({url}) — {label}: `{deadline.isoformat()}`")
 
-    _append_category(lines, "B. Industry Jobs", plan, "jobs")
-    _append_category(lines, "C. PhD Opportunities", plan, "phd")
-    _append_category(lines, "D. Events", plan, "events")
-    _append_career_intelligence(lines, plan)
+    _append_jobs_by_group(
+        lines,
+        "B. Top Research Matches",
+        plan,
+        {RoleDisplayGroup.TOP_RESEARCH_MATCH},
+    )
+    _append_category(lines, "C. Fall 2028 PhD Opportunities", plan, "phd")
+    _append_jobs_by_group(
+        lines,
+        "D. NeuroAI / BCI Research-Adjacent Roles",
+        plan,
+        {RoleDisplayGroup.RESEARCH_ADJACENT},
+    )
+    _append_category(lines, "E. Conferences and Deadlines", plan, "events")
+    _append_jobs_by_group(
+        lines,
+        "F. Transferable Technical Roles",
+        plan,
+        {RoleDisplayGroup.TRANSFERABLE_TECHNICAL},
+    )
 
-    lines.extend(["## F. Needs Review", ""])
+    lines.extend(["## G. Needs Review", ""])
     needs_review = [
         decision
         for decision in preview.recommendations.decisions
-        if decision.classification is RecommendationClassification.NEEDS_REVIEW
+        if decision.effective_classification is RecommendationClassification.NEEDS_REVIEW
+        and decision.display_group is not RoleDisplayGroup.TRANSFERABLE_TECHNICAL
     ]
     if not needs_review and not unhealthy:
         lines.append("None.")
@@ -291,7 +309,7 @@ def _write_weekly_report(
             "authoritative long-term history."
         )
 
-    lines.extend(["", "## G. Synchronization Preview", ""])
+    lines.extend(["", "## H. Synchronization Preview", ""])
     for category, sheet_plan in preview.workbook.plans.items():
         lines.append(
             f"- {category}: insert={sheet_plan.insert_count}; update={sheet_plan.update_count}; "
@@ -306,7 +324,7 @@ def _write_weekly_report(
     )
     lines.append(f"- Proposed plan fingerprint: `{plan.plan_fingerprint}`")
 
-    lines.extend(["", "## H. Run Health", ""])
+    lines.extend(["", "## I. Source Health and Change Summary", ""])
     for source_id, result in sorted(sources.items()):
         lines.append(
             f"- `{source_id}`: {result.health.value}; "
@@ -349,9 +367,47 @@ def _append_category(
         facts = _category_facts(opportunity)
         lines.append(
             f"- `{opportunity.opportunity_id}` [{opportunity.title}]({_official_url(opportunity)}) "
-            f"— {opportunity.organization}; recommendation={decision.classification.value}; "
+            f"— {opportunity.organization}; base_recommendation={decision.classification.value}; "
+            f"effective_recommendation={decision.effective_classification.value}; "
             f"domain_fit={decision.domain_fit.value}; score={processed.score.final_score:.1f}; "
             f"{facts}"
+        )
+    lines.append("")
+
+
+def _append_jobs_by_group(
+    lines: list[str],
+    heading: str,
+    plan: IncrementalLiveSyncPlan,
+    groups: set[RoleDisplayGroup],
+) -> None:
+    lines.extend([f"## {heading}", ""])
+    decisions = plan.preview.recommendations.by_record_id
+    records = sorted(
+        plan.preview.execution.pipelines["jobs"].records,
+        key=lambda item: item.score.final_score,
+        reverse=True,
+    )
+    matching = [
+        item
+        for item in records
+        if decisions[item.opportunity.opportunity_id].display_group in groups
+    ]
+    if not matching:
+        lines.extend(["No verified roles in this section.", ""])
+        return
+    for processed in matching:
+        opportunity = processed.opportunity
+        decision = decisions[opportunity.opportunity_id]
+        lines.append(
+            f"- `{opportunity.opportunity_id}` "
+            f"[{opportunity.title}]({_official_url(opportunity)}) — {opportunity.organization}; "
+            "role_function="
+            f"{decision.role_function.value if decision.role_function else 'UNKNOWN'}; "
+            f"base_recommendation={decision.classification.value}; "
+            f"effective_recommendation={decision.effective_classification.value}; "
+            f"domain_fit={decision.domain_fit.value}; score={processed.score.final_score:.1f}; "
+            f"{_category_facts(opportunity)}"
         )
     lines.append("")
 

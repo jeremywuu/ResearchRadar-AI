@@ -74,6 +74,10 @@ def _raw_records() -> dict[str, dict[str, object]]:
             "working_language": None,
             "salary": {},
             "source_evidence": ["Official job ID JOB-1", "Title: Research Scientist"],
+            "role_evidence": ["Conduct research and design experiments to analyze human behavior."],
+            "research_responsibility_evidence": [
+                "Conduct research and design experiments to analyze human behavior."
+            ],
             "opportunity_status": "confirmed open",
         },
         "phd": common

@@ -102,6 +102,12 @@ than negative. A generic job title is not evidence of a cognition or neuroscienc
 question; AI interpretability is adjacent only when available evidence connects it to cognition,
 brain, behavior, or neural representations.
 
+Industry recommendations also derive a separate role-function assessment from official
+responsibility evidence: direct research, research-adjacent engineering, clinical implementation,
+technical platform, non-research, or unknown. Employer identity, title, and BCI branding cannot
+establish the role function alone. The assessment may conservatively lower effective display
+priority without changing the underlying score, Domain Fit, source facts, or user feedback.
+
 Fall 2028 is the primary PhD cycle. Earlier cycles remain monitored as references. Relevant
 PhD-required industry roles remain preserved as future career targets even when they are not
 recommended for immediate synchronization.

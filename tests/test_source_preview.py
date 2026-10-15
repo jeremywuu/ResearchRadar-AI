@@ -8,12 +8,14 @@ from pathlib import Path
 import yaml
 
 from research_radar.collectors.base import SourceCollectionResult, SourceDescriptor
+from research_radar.live_integration import RecommendationClassification
 from research_radar.models import (
     ExtractionStatus,
     RetrievalMethod,
     SourceHealth,
     SourceVerificationStatus,
 )
+from research_radar.role_function import RoleDisplayGroup, RoleFunction
 from research_radar.source_preview import (
     find_semantic_duplicate_conflicts,
     run_source_production_preview,
@@ -214,6 +216,13 @@ def test_production_preview_restores_and_plans_without_cloud_or_sheets_writes(
     assert result.report_path.is_file()
     assert result.weekly_brief_path.is_file()
     assert "Personal_Notes" not in result.weekly_brief_path.read_text(encoding="utf-8")
+    decision = result.sheets_plan.preview.recommendations.decisions[0]
+    assert decision.role_function is RoleFunction.RESEARCH_ADJACENT_ENGINEERING
+    assert decision.display_group is RoleDisplayGroup.RESEARCH_ADJACENT
+    assert decision.effective_classification in {
+        RecommendationClassification.HIGH_PRIORITY,
+        RecommendationClassification.RELEVANT,
+    }
 
 
 def test_rldm_semantic_duplicate_with_different_id_is_reported(tmp_path: Path) -> None:

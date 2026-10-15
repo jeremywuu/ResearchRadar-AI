@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
-from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
@@ -20,6 +19,7 @@ from research_radar.fresh_observation import (
 )
 from research_radar.live_integration import IncrementalLiveSyncPlan, prepare_incremental_live_sync
 from research_radar.models import IndustryJob, ProcessedOpportunity
+from research_radar.role_function import RoleFunction, assess_role_function
 from research_radar.storage.durable_state import StateRestoreResult
 from research_radar.storage.sheets import SheetsAdapter
 
@@ -30,19 +30,12 @@ class PreviewStateReader(Protocol):
     def restore(self, target_dir: Path) -> StateRestoreResult: ...
 
 
-class ResearchRoleFit(StrEnum):
-    RESEARCH_ADJACENT_ENGINEERING = "RESEARCH_ADJACENT_ENGINEERING"
-    CLINICAL_IMPLEMENTATION = "CLINICAL_IMPLEMENTATION"
-    TECHNICAL_PLATFORM = "TECHNICAL_PLATFORM"
-    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
-
-
 @dataclass(frozen=True)
 class RoleFitAudit:
     record_id: str
     title: str
     official_url: str
-    role_fit: ResearchRoleFit
+    role_fit: RoleFunction
     reason: str
     missing_information: tuple[str, ...]
 
@@ -161,38 +154,13 @@ def run_source_production_preview(
 
 
 def audit_paradromics_role(processed: ProcessedOpportunity) -> RoleFitAudit:
-    """Audit research-role fit separately from employer and domain-fit scoring."""
+    """Render the general role-function assessment in the source-preview audit."""
 
     opportunity = processed.opportunity
     if not isinstance(opportunity, IndustryJob):
         raise TypeError("role-fit audit requires an IndustryJob")
     raw = opportunity.original_values
-    title = opportunity.title.casefold()
-    research_evidence = tuple(raw.get("research_responsibility_evidence") or ())
-    if "field clinical" in title or title.startswith("clinical "):
-        role_fit = ResearchRoleFit.CLINICAL_IMPLEMENTATION
-        reason = (
-            "The verified role evidence centers clinical or field implementation; the BCI "
-            "employer and domain exposure do not establish a research position."
-        )
-    elif "embedded" in title:
-        role_fit = ResearchRoleFit.TECHNICAL_PLATFORM
-        reason = (
-            "The role supports BCI hardware/software infrastructure, but the available evidence "
-            "does not establish neural analysis or cognitive research ownership."
-        )
-    elif research_evidence and any(
-        marker in " ".join(research_evidence).casefold()
-        for marker in ("decod", "neural data", "signal processing", "model")
-    ):
-        role_fit = ResearchRoleFit.RESEARCH_ADJACENT_ENGINEERING
-        reason = (
-            "The role has explicit neural-data, decoding, modeling, or signal-processing "
-            "responsibilities, while remaining an engineering rather than scientist role."
-        )
-    else:
-        role_fit = ResearchRoleFit.INSUFFICIENT_EVIDENCE
-        reason = "The official posting does not provide enough role-level research evidence."
+    assessment = assess_role_function(opportunity)
 
     missing = []
     if opportunity.education_requirement.value == "UNKNOWN":
@@ -208,8 +176,8 @@ def audit_paradromics_role(processed: ProcessedOpportunity) -> RoleFitAudit:
         record_id=opportunity.opportunity_id,
         title=opportunity.title,
         official_url=opportunity.source_url,
-        role_fit=role_fit,
-        reason=reason,
+        role_fit=assessment.classification,
+        reason=assessment.explanation,
         missing_information=tuple(missing),
     )
 
@@ -320,7 +288,8 @@ def _write_preview_report(
                 "",
                 f"- Record_ID: `{audit.record_id}`",
                 f"- Score/domain: `{item.score.final_score:.2f}` / `{item.score.domain_fit.value}`",
-                f"- Recommendation: `{decision.classification.value}`",
+                f"- Base recommendation: `{decision.classification.value}`",
+                f"- Effective recommendation: `{decision.effective_classification.value}`",
                 f"- Research-role audit: `{audit.role_fit.value}`",
                 f"- Career stage: `{opportunity.classification.value}`",
                 f"- Location: {opportunity.location or 'UNKNOWN'}",
@@ -402,39 +371,54 @@ def _write_weekly_preview(
     sheets_plan: IncrementalLiveSyncPlan,
     role_audits: tuple[RoleFitAudit, ...],
 ) -> Path:
+    by_role = {role: [] for role in RoleFunction}
+    for audit in role_audits:
+        by_role[audit.role_fit].append(audit)
     lines = [
-        "# TOP RESEARCH MATCHES — PREVIEW",
+        "# RESEARCHRADAR WEEKLY BRIEF — ROLE-GATED PREVIEW",
         "",
         "> Informational profiles and open opportunities are intentionally separated.",
         "",
-        "## A. Fall 2028 PhD Watch",
-        "",
-        "- CMU Neural Computation — `INFORMATIONAL_PROFILE`; Fall 2028 opening `UNKNOWN`.",
-        "",
-        "## B. Potential Supervisors & Labs",
-        "",
-        "- No faculty recruitment statement was verified in this pilot.",
-        "",
-        "## C. NeuroAI / BCI Industry Research",
+        "## 1. Top Research Matches",
         "",
     ]
-    for audit in role_audits:
-        lines.append(
-            f"- [{audit.title}]({audit.official_url}) — `{audit.role_fit.value}`; {audit.reason}"
-        )
+    _append_role_audits(lines, by_role[RoleFunction.RESEARCH_DIRECT])
+    lines.extend(
+        [
+            "## 2. Fall 2028 PhD Opportunities",
+            "",
+            "- No confirmed Fall 2028 opening was verified in this pilot.",
+            "",
+            "### Informational PhD watch",
+            "",
+            "- CMU Neural Computation — `PHD_PROGRAM_PROFILE`; Fall 2028 opening `UNKNOWN`; "
+            "not an open PhD opportunity.",
+            "",
+            "## 3. NeuroAI / BCI Research-Adjacent Roles",
+            "",
+        ]
+    )
+    _append_role_audits(lines, by_role[RoleFunction.RESEARCH_ADJACENT_ENGINEERING])
     lines.extend(
         [
             "",
-            "## D. Conferences & Deadlines",
+            "## 4. Conferences and Deadlines",
             "",
             "- [RLDM 2027](https://rldm.org/) — July 6–9, 2027, Paris; "
             "abstract deadline January 20, 2027 AoE; registration deadline unknown.",
             "",
-            "## E. Transferable General AI Roles",
+            "## 5. Transferable Technical Roles",
             "",
-            "- No additional general-AI source was collected in this pilot.",
+        ]
+    )
+    _append_role_audits(lines, by_role[RoleFunction.TECHNICAL_PLATFORM])
+    needs_review = by_role[RoleFunction.CLINICAL_IMPLEMENTATION] + by_role[RoleFunction.UNKNOWN]
+    lines.extend(["", "## 6. Needs Review", ""])
+    _append_role_audits(lines, needs_review)
+    lines.extend(
+        [
             "",
-            "## F. Source Health",
+            "## 7. Source Health and Change Summary",
             "",
         ]
     )
@@ -443,8 +427,6 @@ def _write_weekly_preview(
     counts = _change_counts(pilot_changes)
     lines.extend(
         [
-            "",
-            "## G. Historical Change Summary",
             "",
             f"- Restored snapshot: `{restored.snapshot_id}`",
             f"- Restored counts: `{dict(restored.record_counts or {})}`",
@@ -459,6 +441,16 @@ def _write_weekly_preview(
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
+
+
+def _append_role_audits(lines: list[str], audits: list[RoleFitAudit]) -> None:
+    if not audits:
+        lines.append("No verified roles in this section.")
+        return
+    for audit in audits:
+        lines.append(
+            f"- [{audit.title}]({audit.official_url}) — `{audit.role_fit.value}`; {audit.reason}"
+        )
 
 
 def _change_counts(changes: tuple[OpportunityObservationChange, ...]) -> dict[str, int]:

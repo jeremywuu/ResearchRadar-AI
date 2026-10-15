@@ -76,6 +76,12 @@ core evidence may be high priority, adjacent evidence may be relevant, transfera
 reviewable, low-fit evidence stays archived, and insufficient evidence requires review. Title
 signals may identify obvious business or ambiguous roles but cannot manufacture scientific scope.
 
+`role_function` is a pure derived module at the personalization/report seam. Its small interface
+accepts an `IndustryJob` and returns an evidence-bearing role-function and display group. The
+recommendation decision preserves its base classification and carries a separately gated effective
+classification. No role-function field is serialized into canonical opportunity snapshots, so
+schema-v2 durable state remains readable without migration.
+
 ## Preference-bound incremental plans
 
 An incremental plan payload contains proposed sheet operations, source observations,

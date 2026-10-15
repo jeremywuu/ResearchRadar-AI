@@ -140,6 +140,12 @@ def test_source_discovery_registry_cannot_activate_production() -> None:
 
     assert len(discovery["sources"]) == 15
     assert all(item["activate_in_production"] is False for item in discovery["sources"])
+    readiness = {
+        item["source_id"]: item.get("activation_readiness") for item in discovery["sources"]
+    }
+    assert readiness["rldm_2027_official_pilot"] == ("APPROVED_FOR_PRODUCTION_PREPARATION")
+    assert readiness["paradromics_careers_pilot"] == "CONDITIONAL_ROLE_FUNCTION_GATE"
+    assert readiness["cmu_neural_computation_profile"] == "INFORMATIONAL_WATCH_ONLY"
 
 
 def test_source_discovery_rejects_production_activation(tmp_path: Path) -> None:

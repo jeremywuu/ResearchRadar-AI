@@ -14,7 +14,8 @@ from research_radar.collectors.service import default_adapters
 from research_radar.config import load_source_discovery
 from research_radar.models import DomainFitClassification, SourceHealth
 from research_radar.pipelines import run_events_pipeline, run_jobs_pipeline
-from research_radar.source_preview import ResearchRoleFit, audit_paradromics_role
+from research_radar.role_function import RoleFunction
+from research_radar.source_preview import audit_paradromics_role
 
 NOW = datetime(2026, 10, 14, 9, 0, tzinfo=UTC)
 ROOT = Path(__file__).resolve().parents[1]
@@ -265,8 +266,8 @@ def test_clinical_bci_role_is_audited_separately_from_domain_score() -> None:
 
     audit = audit_paradromics_role(processed)
 
-    assert audit.role_fit is ResearchRoleFit.CLINICAL_IMPLEMENTATION
-    assert "do not establish a research position" in audit.reason
+    assert audit.role_fit is RoleFunction.CLINICAL_IMPLEMENTATION
+    assert "does not by itself establish computational research ownership" in audit.reason
 
 
 def test_bci_decoding_software_role_remains_research_adjacent() -> None:
@@ -284,7 +285,51 @@ def test_bci_decoding_software_role_remains_research_adjacent() -> None:
 
     audit = audit_paradromics_role(processed)
 
-    assert audit.role_fit is ResearchRoleFit.RESEARCH_ADJACENT_ENGINEERING
+    assert audit.role_fit is RoleFunction.RESEARCH_ADJACENT_ENGINEERING
+
+
+def test_verified_paradromics_roles_keep_domain_fit_but_receive_function_gate() -> None:
+    adapter = ParadromicsCareersAdapter()
+    rows = (
+        (
+            "https://paradromicsinc.applytojob.com/apply/ujxQN2lhPz/Field-Clinical-Specialist-Engineer",
+            "Field Clinical Specialist/Engineer",
+            "Austin, TX",
+            "Support an implantable BCI during surgical procedures, clinical study visits, "
+            "and neural data collection sessions.",
+            "job_b64999c0ec2ba3e6",
+            DomainFitClassification.CORE_DOMAIN_FIT,
+            RoleFunction.CLINICAL_IMPLEMENTATION,
+        ),
+        (
+            "https://paradromicsinc.applytojob.com/apply/u5hXN4N9ID/Embedded-Software-Engineer",
+            "Embedded Software Engineer",
+            "Austin, TX",
+            "Build low-latency embedded software for high-fidelity brain machine implants.",
+            "job_35958c530d6affa6",
+            DomainFitClassification.ADJACENT_DOMAIN_FIT,
+            RoleFunction.TECHNICAL_PLATFORM,
+        ),
+        (
+            "https://paradromicsinc.applytojob.com/apply/r7CgYCDBNk/Software-Engineer",
+            "Software Engineer",
+            "Oakland, CA",
+            "Develop BCI data curation strategies and decoding algorithms. Evaluate software "
+            "with real neural data using Python, machine learning, and signal processing. "
+            "Requires 3+ years of professional experience.",
+            "job_a646588f3e94bbb7",
+            DomainFitClassification.CORE_DOMAIN_FIT,
+            RoleFunction.RESEARCH_ADJACENT_ENGINEERING,
+        ),
+    )
+
+    for url, title, location, html, expected_id, domain_fit, role_fit in rows:
+        raw = adapter._extract_job(url, title, location, f"<h1>{title}</h1><p>{html}</p>")
+        processed = run_jobs_pipeline([raw], config_dir=ROOT / "config", observed_at=NOW).records[0]
+
+        assert processed.opportunity.opportunity_id == expected_id
+        assert processed.score.domain_fit is domain_fit
+        assert audit_paradromics_role(processed).role_fit is role_fit
 
 
 def _rldm_routes() -> dict[str, HttpResponse | Exception]:

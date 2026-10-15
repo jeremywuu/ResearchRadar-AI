@@ -117,6 +117,12 @@ compensation_disclosure_status
 Base, bonus, equity, and total compensation are separate facts. Percentile fields are omitted
 from the MVP model until a reliable dataset exists.
 
+Role function is deliberately derived rather than persisted in `IndustryJob`. Planning and report
+generation may classify responsibility evidence as `RESEARCH_DIRECT`,
+`RESEARCH_ADJACENT_ENGINEERING`, `CLINICAL_IMPLEMENTATION`, `TECHNICAL_PLATFORM`, `NON_RESEARCH`,
+or `UNKNOWN`. The derived result never changes source timestamps or the stored Domain Fit and does
+not require a schema-version change.
+
 ## PhDOpportunity
 
 ```text

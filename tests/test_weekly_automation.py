@@ -100,6 +100,10 @@ def _job_raw() -> dict[str, object]:
         "source_verification_status": "VERIFIED_OFFICIAL",
         "source_type": "official_api",
         "source_evidence": ["Official job ID WEEKLY-1"],
+        "role_evidence": ["Conduct research and design experiments to analyze human behavior."],
+        "research_responsibility_evidence": [
+            "Conduct research and design experiments to analyze human behavior."
+        ],
         "extraction_method": "structured_api",
         "opportunity_status": "confirmed open",
     }
@@ -207,6 +211,75 @@ def test_weekly_records_keep_stable_ids_without_durable_state(tmp_path: Path) ->
         second.plan.preview.execution.pipelines["jobs"].records[0].opportunity.opportunity_id
     )
     assert first_id == second_id
+
+
+def test_weekly_role_gate_places_clinical_adjacent_and_platform_roles_separately(
+    tmp_path: Path,
+) -> None:
+    direct = _job_raw()
+    clinical = dict(_job_raw())
+    clinical.update(
+        {
+            "official_job_id": "CLINICAL-1",
+            "source_url": "https://official.example/jobs/CLINICAL-1",
+            "title": "Field Clinical Specialist",
+            "role_evidence": ["Support clinical sites during surgical patient visits."],
+            "research_responsibility_evidence": [
+                "Support clinical sites during surgical patient visits."
+            ],
+        }
+    )
+    adjacent = dict(_job_raw())
+    adjacent.update(
+        {
+            "official_job_id": "DECODING-1",
+            "source_url": "https://official.example/jobs/DECODING-1",
+            "title": "Neural Decoding Engineer",
+            "role_evidence": ["Develop decoding algorithms and evaluate neural data software."],
+            "research_responsibility_evidence": [
+                "Develop decoding algorithms and evaluate neural data software."
+            ],
+        }
+    )
+    platform = dict(_job_raw())
+    platform.update(
+        {
+            "official_job_id": "PLATFORM-1",
+            "source_url": "https://official.example/jobs/PLATFORM-1",
+            "title": "Embedded Firmware Engineer",
+            "role_evidence": ["Build embedded firmware and low-latency hardware interfaces."],
+            "research_responsibility_evidence": [
+                "Build embedded firmware and low-latency hardware interfaces."
+            ],
+        }
+    )
+    adapters = _adapters()
+    adapters["official_jobs"] = StaticAdapter(
+        "official_jobs", "jobs", SourceHealth.SUCCESS, [direct, clinical, adjacent, platform]
+    )
+
+    result = run_weekly_monitor(
+        project_root=ROOT,
+        output_dir=tmp_path / "run",
+        state_dir=tmp_path / "missing",
+        observed_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=PilotMemoryAdapter(),
+        adapters=adapters,
+    )
+    report = result.report_path.read_text(encoding="utf-8")
+
+    top = report.split("## B. Top Research Matches", 1)[1].split("## C.", 1)[0]
+    adjacent_section = report.split("## D. NeuroAI / BCI Research-Adjacent Roles", 1)[1].split(
+        "## E.", 1
+    )[0]
+    platform_section = report.split("## F. Transferable Technical Roles", 1)[1].split("## G.", 1)[0]
+    review_section = report.split("## G. Needs Review", 1)[1].split("## H.", 1)[0]
+    assert "Research Scientist, Human Behavior" in top
+    assert "Field Clinical Specialist" not in top
+    assert "Neural Decoding Engineer" in adjacent_section
+    assert "Embedded Firmware Engineer" in platform_section
+    assert "Field Clinical Specialist" in review_section
 
 
 def test_empty_durable_backend_enters_bootstrap_without_committing(tmp_path: Path) -> None:

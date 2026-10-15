@@ -507,6 +507,19 @@ Acceptance evidence:
 - The Sheets dry-run proposed three job and one event inserts with zero updates, invalid records,
   conflicts, GCS writes, or Sheets writes.
 
+## Milestone 6.1C-A — Research-role fit and source activation preparation
+
+Status: implemented locally; source activation and push remain unauthorized.
+
+- Add a responsibility-evidence role-function gate without changing scoring weights or Domain Fit.
+- Preserve base recommendation while deriving a conservative effective recommendation and Weekly
+  Brief placement.
+- Hold clinical implementation and unknown roles for review; separate research-adjacent and
+  technical-platform roles.
+- Prepare RLDM and Paradromics activation flags while keeping both outside `default_adapters()`.
+- Keep CMU Neural Computation as an informational programme watch, not an open PhD feed.
+- Preserve schema-v2 GCS compatibility and perform only read-only baseline verification.
+
 ## Later phases
 
 - Reliable salary benchmarking and trends
