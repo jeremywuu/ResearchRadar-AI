@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,19 @@ if TYPE_CHECKING:
 
 _SNAPSHOT_FILES = ("jobs.json", "phd.json", "events.json", "source_metadata.json")
 _SUCCESS_HEALTH = {SourceHealth.SUCCESS, SourceHealth.SUCCESS_NO_MATCHES}
+_RECENT_POSTING_WINDOW_DAYS = 30
+
+
+class PostingDateStatus(StrEnum):
+    NEWLY_POSTED = "NEWLY_POSTED"
+    OFFICIAL_POSTING_DATE = "OFFICIAL_POSTING_DATE"
+    UNKNOWN_POSTING_DATE = "UNKNOWN_POSTING_DATE"
+
+
+class PhDAdmissionGroup(StrEnum):
+    CONFIRMED_FALL_2028 = "CONFIRMED_FALL_2028"
+    FALL_2028_WATCH = "FALL_2028_WATCH"
+    OTHER_CONFIRMED_CYCLE = "OTHER_CONFIRMED_CYCLE"
 
 
 @dataclass(frozen=True)
@@ -226,6 +240,14 @@ def _write_weekly_report(
     not_observed_count = analysis.counts[FreshObservationStatus.NOT_OBSERVED] if analysis else 0
     restored_counts = dict(state_restore.record_counts or {}) if state_restore else {}
     restored_total = sum(restored_counts.values())
+    new_job_posting_statuses = _new_job_posting_statuses(plan, analysis, observed_at.date())
+    newly_posted_count = sum(
+        status is PostingDateStatus.NEWLY_POSTED for status, _ in new_job_posting_statuses.values()
+    )
+    unknown_posting_count = sum(
+        status is PostingDateStatus.UNKNOWN_POSTING_DATE
+        for status, _ in new_job_posting_statuses.values()
+    )
 
     lines = [
         "# RESEARCHRADAR WEEKLY BRIEF",
@@ -239,7 +261,12 @@ def _write_weekly_report(
         f"- Sources checked: {len(sources)}",
         f"- Successful or no-match sources: {len(successful)}",
         f"- Failed, blocked, partial, or unsupported sources: {len(unhealthy)}",
-        f"- New opportunities: {new_count if analysis else 'unknown without durable state'}",
+        "- New-to-Radar opportunities (first verified observation by ResearchRadar): "
+        f"{new_count if analysis else 'unknown without durable state'}",
+        "- Officially newly posted jobs: "
+        f"{newly_posted_count if analysis else 'unknown without durable state'}",
+        "- New-to-Radar jobs with unknown official posting date: "
+        f"{unknown_posting_count if analysis else 'unknown without durable state'}",
         "- Meaningful changes: "
         f"{meaningful_count if analysis else 'unknown without durable state'}",
         f"- Cross-run change detection: {change_summary}",
@@ -267,23 +294,29 @@ def _write_weekly_report(
         "B. Top Research Matches",
         plan,
         {RoleDisplayGroup.TOP_RESEARCH_MATCH},
+        analysis=analysis,
+        reference_date=observed_at.date(),
     )
-    _append_category(lines, "C. Fall 2028 PhD Opportunities", plan, "phd")
+    _append_phd_groups(lines, plan)
     _append_jobs_by_group(
         lines,
-        "D. NeuroAI / BCI Research-Adjacent Roles",
+        "G. NeuroAI / BCI Research-Adjacent Roles",
         plan,
         {RoleDisplayGroup.RESEARCH_ADJACENT},
+        analysis=analysis,
+        reference_date=observed_at.date(),
     )
-    _append_category(lines, "E. Conferences and Deadlines", plan, "events")
+    _append_category(lines, "H. Conferences and Deadlines", plan, "events")
     _append_jobs_by_group(
         lines,
-        "F. Transferable Technical Roles",
+        "I. Transferable Technical Roles",
         plan,
         {RoleDisplayGroup.TRANSFERABLE_TECHNICAL},
+        analysis=analysis,
+        reference_date=observed_at.date(),
     )
 
-    lines.extend(["## G. Needs Review", ""])
+    lines.extend(["## J. Needs Review", ""])
     needs_review = [
         decision
         for decision in preview.recommendations.decisions
@@ -296,9 +329,16 @@ def _write_weekly_report(
         processed = _processed_by_id(plan).get(decision.record_id)
         if processed is not None:
             opportunity = processed.opportunity
+            details = ""
+            if isinstance(opportunity, IndustryJob):
+                details = "; " + _job_observation_facts(
+                    opportunity,
+                    analysis=analysis,
+                    reference_date=observed_at.date(),
+                )
             lines.append(
                 f"- `{decision.record_id}` [{opportunity.title}]({_official_url(opportunity)}): "
-                f"{decision.explanation}"
+                f"{decision.explanation}{details}; {_category_facts(opportunity)}"
             )
     for result in unhealthy:
         error = "; ".join(result.errors) if result.errors else "no extracted opportunity"
@@ -309,7 +349,7 @@ def _write_weekly_report(
             "authoritative long-term history."
         )
 
-    lines.extend(["", "## H. Synchronization Preview", ""])
+    lines.extend(["", "## K. Synchronization Preview", ""])
     for category, sheet_plan in preview.workbook.plans.items():
         lines.append(
             f"- {category}: insert={sheet_plan.insert_count}; update={sheet_plan.update_count}; "
@@ -324,7 +364,7 @@ def _write_weekly_report(
     )
     lines.append(f"- Proposed plan fingerprint: `{plan.plan_fingerprint}`")
 
-    lines.extend(["", "## I. Source Health and Change Summary", ""])
+    lines.extend(["", "## L. Source Health and Change Summary", ""])
     for source_id, result in sorted(sources.items()):
         lines.append(
             f"- `{source_id}`: {result.health.value}; "
@@ -380,6 +420,9 @@ def _append_jobs_by_group(
     heading: str,
     plan: IncrementalLiveSyncPlan,
     groups: set[RoleDisplayGroup],
+    *,
+    analysis: FreshObservationAnalysis | None,
+    reference_date: date,
 ) -> None:
     lines.extend([f"## {heading}", ""])
     decisions = plan.preview.recommendations.by_record_id
@@ -399,6 +442,11 @@ def _append_jobs_by_group(
     for processed in matching:
         opportunity = processed.opportunity
         decision = decisions[opportunity.opportunity_id]
+        observation_facts = _job_observation_facts(
+            opportunity,
+            analysis=analysis,
+            reference_date=reference_date,
+        )
         lines.append(
             f"- `{opportunity.opportunity_id}` "
             f"[{opportunity.title}]({_official_url(opportunity)}) — {opportunity.organization}; "
@@ -407,6 +455,7 @@ def _append_jobs_by_group(
             f"base_recommendation={decision.classification.value}; "
             f"effective_recommendation={decision.effective_classification.value}; "
             f"domain_fit={decision.domain_fit.value}; score={processed.score.final_score:.1f}; "
+            f"{observation_facts}; "
             f"{_category_facts(opportunity)}"
         )
     lines.append("")
@@ -415,8 +464,14 @@ def _append_jobs_by_group(
 def _category_facts(opportunity: object) -> str:
     if isinstance(opportunity, IndustryJob):
         salary = opportunity.original_salary_text or "salary unknown"
+        experience = _experience_requirement(opportunity)
+        experience_fact = (
+            f"experience_requirement={experience}; immediate_application_readiness=unknown; "
+            if experience
+            else "experience_requirement=unknown; immediate_application_readiness=unknown; "
+        )
         return (
-            f"education={opportunity.education_requirement.value}; {salary}; "
+            f"education={opportunity.education_requirement.value}; {experience_fact}{salary}; "
             f"career_stage={opportunity.classification.value}"
         )
     if isinstance(opportunity, PhDOpportunity):
@@ -437,6 +492,140 @@ def _category_facts(opportunity: object) -> str:
             f"submission_deadline={submission_deadline}"
         )
     return "details unknown"
+
+
+def _append_phd_groups(lines: list[str], plan: IncrementalLiveSyncPlan) -> None:
+    records = sorted(
+        plan.preview.execution.pipelines["phd"].records,
+        key=lambda item: item.score.final_score,
+        reverse=True,
+    )
+    grouped = {group: [] for group in PhDAdmissionGroup}
+    for processed in records:
+        grouped[_phd_admission_group(processed.opportunity)].append(processed)
+
+    headings = (
+        ("C. Confirmed Fall 2028 Openings", PhDAdmissionGroup.CONFIRMED_FALL_2028),
+        (
+            "D. Fall 2028 PhD Watch / Admission Cycle Unconfirmed",
+            PhDAdmissionGroup.FALL_2028_WATCH,
+        ),
+        ("E. Other Confirmed Admission Cycles", PhDAdmissionGroup.OTHER_CONFIRMED_CYCLE),
+    )
+    decisions = plan.preview.recommendations.by_record_id
+    for heading, group in headings:
+        lines.extend([f"## {heading}", ""])
+        if not grouped[group]:
+            lines.extend(["No verified opportunities in this section.", ""])
+            continue
+        for processed in grouped[group]:
+            opportunity = processed.opportunity
+            decision = decisions[opportunity.opportunity_id]
+            lines.append(
+                f"- `{opportunity.opportunity_id}` "
+                f"[{opportunity.title}]({_official_url(opportunity)}) — "
+                f"{opportunity.organization}; cycle={opportunity.target_cycle or 'UNKNOWN'}; "
+                f"status={opportunity.opportunity_status.value}; "
+                f"recommendation={decision.effective_classification.value}; "
+                f"score={processed.score.final_score:.1f}; {_category_facts(opportunity)}"
+            )
+        lines.append("")
+
+    lines.extend(["## F. Informational Programme Profiles", ""])
+    lines.extend(
+        [
+            "Informational profiles are not ordinary PhD opportunities and are intentionally "
+            "excluded from this opportunity-feed report.",
+            "",
+        ]
+    )
+
+
+def _phd_admission_group(opportunity: PhDOpportunity) -> PhDAdmissionGroup:
+    cycle = (opportunity.target_cycle or "").strip().casefold()
+    confirmed = opportunity.opportunity_status.value in {"CONFIRMED_OPEN", "CONFIRMED_UPCOMING"}
+    if "2028" in cycle and confirmed:
+        return PhDAdmissionGroup.CONFIRMED_FALL_2028
+    if cycle and confirmed:
+        return PhDAdmissionGroup.OTHER_CONFIRMED_CYCLE
+    return PhDAdmissionGroup.FALL_2028_WATCH
+
+
+def _new_job_posting_statuses(
+    plan: IncrementalLiveSyncPlan,
+    analysis: FreshObservationAnalysis | None,
+    reference_date: date,
+) -> dict[str, tuple[PostingDateStatus, date | None]]:
+    if analysis is None:
+        return {}
+    new_ids = {
+        change.record_id
+        for change in analysis.changes
+        if change.category == "jobs" and change.status is FreshObservationStatus.NEW
+    }
+    return {
+        processed.opportunity.opportunity_id: _posting_date_status(
+            processed.opportunity, reference_date
+        )
+        for processed in plan.preview.execution.pipelines["jobs"].records
+        if processed.opportunity.opportunity_id in new_ids
+    }
+
+
+def _job_observation_facts(
+    opportunity: IndustryJob,
+    *,
+    analysis: FreshObservationAnalysis | None,
+    reference_date: date,
+) -> str:
+    observation = analysis.by_record_id.get(opportunity.opportunity_id) if analysis else None
+    observation_status = (
+        "NEW_TO_RADAR"
+        if observation and observation.status is FreshObservationStatus.NEW
+        else observation.status.value
+        if observation
+        else "UNKNOWN_WITHOUT_DURABLE_STATE"
+    )
+    posting_status, posting_date = _posting_date_status(opportunity, reference_date)
+    posting_detail = posting_status.value
+    if posting_date is not None:
+        posting_detail += f" ({posting_date.isoformat()})"
+    return f"radar_status={observation_status}; posting_status={posting_detail}"
+
+
+def _posting_date_status(
+    opportunity: IndustryJob,
+    reference_date: date,
+) -> tuple[PostingDateStatus, date | None]:
+    posted_on = _official_posting_date(opportunity)
+    if posted_on is None:
+        return PostingDateStatus.UNKNOWN_POSTING_DATE, None
+    age = (reference_date - posted_on).days
+    if 0 <= age <= _RECENT_POSTING_WINDOW_DAYS:
+        return PostingDateStatus.NEWLY_POSTED, posted_on
+    return PostingDateStatus.OFFICIAL_POSTING_DATE, posted_on
+
+
+def _official_posting_date(opportunity: IndustryJob) -> date | None:
+    for field in ("posted_at", "published_at", "publication_date", "date_posted"):
+        raw_value = opportunity.original_values.get(field)
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            continue
+        try:
+            return datetime.fromisoformat(raw_value.strip().replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                return date.fromisoformat(raw_value.strip())
+            except ValueError:
+                continue
+    return None
+
+
+def _experience_requirement(opportunity: IndustryJob) -> str | None:
+    value = opportunity.original_values.get("experience_requirement_detail")
+    if isinstance(value, str) and value.strip():
+        return " ".join(value.split())
+    return None
 
 
 def _append_career_intelligence(lines: list[str], plan: IncrementalLiveSyncPlan) -> None:

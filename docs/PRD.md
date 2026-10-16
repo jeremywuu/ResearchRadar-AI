@@ -108,6 +108,14 @@ technical platform, non-research, or unknown. Employer identity, title, and BCI 
 establish the role function alone. The assessment may conservatively lower effective display
 priority without changing the underlying score, Domain Fit, source facts, or user feedback.
 
+Weekly reporting keeps observation history separate from source publication facts. `NEW_TO_RADAR`
+means ResearchRadar verified a stable record for the first time; `NEWLY_POSTED` requires a recent
+official posting date, and an absent official date is shown as `UNKNOWN_POSTING_DATE` rather than
+being inferred from `First_Seen`. PhD records are grouped by their evidenced admission cycle:
+confirmed Fall 2028 openings, unconfirmed-cycle watch records, and other confirmed cycles remain
+separate. Informational programme profiles do not become ordinary PhD opportunities. Explicit
+experience requirements are displayed without claiming that the user satisfies them.
+
 Fall 2028 is the primary PhD cycle. Earlier cycles remain monitored as references. Relevant
 PhD-required industry roles remain preserved as future career targets even when they are not
 recommended for immediate synchronization.

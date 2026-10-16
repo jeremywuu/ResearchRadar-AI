@@ -109,6 +109,31 @@ def _job_raw() -> dict[str, object]:
     }
 
 
+def _phd_raw(
+    *,
+    official_id: str,
+    target_cycle: str | None,
+    status: str,
+) -> dict[str, object]:
+    return {
+        "fictional": False,
+        "title": f"Cognitive Neuroscience PhD {official_id}",
+        "organization": "Official University",
+        "official_opportunity_id": official_id,
+        "source_url": f"https://official.example/phd/{official_id}",
+        "official_source_url": "https://official.example/phd",
+        "adapter_source_id": "official_phd",
+        "target_cycle": target_cycle,
+        "opportunity_type": "centralized phd program admission",
+        "research_areas": ["Computational cognitive neuroscience"],
+        "source_verification_status": "VERIFIED_OFFICIAL",
+        "source_type": "official_html",
+        "source_evidence": [f"Official admission cycle: {target_cycle or 'unknown'}"],
+        "extraction_method": "html",
+        "opportunity_status": status,
+    }
+
+
 def _adapters(*, all_failed: bool = False) -> dict[str, StaticAdapter]:
     failed = SourceHealth.FAILED if all_failed else SourceHealth.SUCCESS
     return {
@@ -161,6 +186,8 @@ def test_weekly_run_reports_partial_success_without_writes_or_private_notes(tmp_
     assert result.source_issues == 1
     assert result.durable_baseline_available is False
     assert "Durable baseline available: no" in report
+    assert "New-to-Radar opportunities (first verified observation by ResearchRadar)" in report
+    assert "New opportunities:" not in report
     assert "Official Cognitive Research Company" in report
     assert "https://official.example/jobs" in report
     assert "official_phd`: BLOCKED" in report
@@ -239,6 +266,7 @@ def test_weekly_role_gate_places_clinical_adjacent_and_platform_roles_separately
             "research_responsibility_evidence": [
                 "Develop decoding algorithms and evaluate neural data software."
             ],
+            "experience_requirement_detail": "3+ years of relevant professional experience",
         }
     )
     platform = dict(_job_raw())
@@ -270,16 +298,146 @@ def test_weekly_role_gate_places_clinical_adjacent_and_platform_roles_separately
     report = result.report_path.read_text(encoding="utf-8")
 
     top = report.split("## B. Top Research Matches", 1)[1].split("## C.", 1)[0]
-    adjacent_section = report.split("## D. NeuroAI / BCI Research-Adjacent Roles", 1)[1].split(
-        "## E.", 1
+    adjacent_section = report.split("## G. NeuroAI / BCI Research-Adjacent Roles", 1)[1].split(
+        "## H.", 1
     )[0]
-    platform_section = report.split("## F. Transferable Technical Roles", 1)[1].split("## G.", 1)[0]
-    review_section = report.split("## G. Needs Review", 1)[1].split("## H.", 1)[0]
+    platform_section = report.split("## I. Transferable Technical Roles", 1)[1].split("## J.", 1)[0]
+    review_section = report.split("## J. Needs Review", 1)[1].split("## K.", 1)[0]
     assert "Research Scientist, Human Behavior" in top
     assert "Field Clinical Specialist" not in top
     assert "Neural Decoding Engineer" in adjacent_section
+    assert "experience_requirement=3+ years of relevant professional experience" in adjacent_section
+    assert "immediate_application_readiness=unknown" in adjacent_section
     assert "Embedded Firmware Engineer" in platform_section
     assert "Field Clinical Specialist" in review_section
+
+
+def test_weekly_distinguishes_radar_discovery_from_official_posting_date(tmp_path: Path) -> None:
+    baseline_adapters = _adapters()
+    baseline_adapters["official_jobs"] = StaticAdapter(
+        "official_jobs", "jobs", SourceHealth.SUCCESS_NO_MATCHES
+    )
+    baseline = run_weekly_monitor(
+        project_root=ROOT,
+        output_dir=tmp_path / "baseline-run",
+        state_dir=tmp_path / "missing",
+        observed_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=PilotMemoryAdapter(),
+        adapters=baseline_adapters,
+    )
+    backend = LocalFilesystemStateBackend(tmp_path / "durable")
+    backend.commit(
+        baseline.snapshot_dir,
+        StateCommitRequest(
+            run_id="empty-baseline",
+            committed_at=NOW,
+            preference_configuration_hash=baseline.plan.preview.preference_configuration_hash,
+            source_health={"official_jobs": "SUCCESS_NO_MATCHES"},
+            bootstrap=True,
+        ),
+        expected_current_generation=None,
+    )
+    recent = _job_raw()
+    recent["published_at"] = "2026-10-10T12:00:00Z"
+    unknown = dict(_job_raw())
+    unknown.update(
+        {
+            "official_job_id": "WEEKLY-UNKNOWN-DATE",
+            "source_url": "https://official.example/jobs/WEEKLY-UNKNOWN-DATE",
+            "title": "Research Scientist, Decision Neuroscience",
+        }
+    )
+    older = dict(_job_raw())
+    older.update(
+        {
+            "official_job_id": "WEEKLY-OLDER-POST",
+            "source_url": "https://official.example/jobs/WEEKLY-OLDER-POST",
+            "title": "Research Scientist, Cognitive Modeling",
+            "posted_at": "2026-06-01",
+        }
+    )
+    adapters = _adapters()
+    adapters["official_jobs"] = StaticAdapter(
+        "official_jobs", "jobs", SourceHealth.SUCCESS, [recent, unknown, older]
+    )
+
+    result = run_weekly_monitor(
+        project_root=ROOT,
+        output_dir=tmp_path / "current-run",
+        state_dir=tmp_path / "unused",
+        observed_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=PilotMemoryAdapter(),
+        adapters=adapters,
+        state_backend=backend,
+        run_id="discovery-run",
+    )
+    report = result.report_path.read_text(encoding="utf-8")
+
+    assert "New-to-Radar opportunities (first verified observation by ResearchRadar): 3" in report
+    assert "Officially newly posted jobs: 1" in report
+    assert "New-to-Radar jobs with unknown official posting date: 1" in report
+    assert "radar_status=NEW_TO_RADAR; posting_status=NEWLY_POSTED (2026-10-10)" in report
+    assert "radar_status=NEW_TO_RADAR; posting_status=UNKNOWN_POSTING_DATE" in report
+    assert "radar_status=NEW_TO_RADAR; posting_status=OFFICIAL_POSTING_DATE (2026-06-01)" in report
+    assert "first_seen_at" not in report.casefold()
+
+
+def test_weekly_groups_phd_records_by_evidenced_admission_cycle(tmp_path: Path) -> None:
+    adapters = _adapters()
+    adapters["official_phd"] = StaticAdapter(
+        "official_phd",
+        "phd",
+        SourceHealth.SUCCESS,
+        [
+            _phd_raw(
+                official_id="FALL-2028",
+                target_cycle="Fall 2028",
+                status="confirmed open",
+            ),
+            _phd_raw(
+                official_id="FALL-2027",
+                target_cycle="Fall 2027",
+                status="confirmed open",
+            ),
+            _phd_raw(
+                official_id="UNKNOWN-CYCLE",
+                target_cycle=None,
+                status="potential signal",
+            ),
+            _phd_raw(
+                official_id="FALL-2028-UNCONFIRMED",
+                target_cycle="Fall 2028",
+                status="potential signal",
+            ),
+        ],
+    )
+
+    result = run_weekly_monitor(
+        project_root=ROOT,
+        output_dir=tmp_path / "run",
+        state_dir=tmp_path / "missing",
+        observed_at=NOW,
+        reference_date=date(2026, 10, 12),
+        adapter=PilotMemoryAdapter(),
+        adapters=adapters,
+    )
+    report = result.report_path.read_text(encoding="utf-8")
+    confirmed_2028 = report.split("## C. Confirmed Fall 2028 Openings", 1)[1].split("## D.", 1)[0]
+    watch = report.split("## D. Fall 2028 PhD Watch / Admission Cycle Unconfirmed", 1)[1].split(
+        "## E.", 1
+    )[0]
+    other = report.split("## E. Other Confirmed Admission Cycles", 1)[1].split("## F.", 1)[0]
+    profiles = report.split("## F. Informational Programme Profiles", 1)[1].split("## G.", 1)[0]
+
+    assert "FALL-2028" in confirmed_2028
+    assert "FALL-2028-UNCONFIRMED" not in confirmed_2028
+    assert "FALL-2027" not in confirmed_2028
+    assert "UNKNOWN-CYCLE" in watch
+    assert "FALL-2028-UNCONFIRMED" in watch
+    assert "FALL-2027" in other
+    assert "Informational profiles are not ordinary PhD opportunities" in profiles
 
 
 def test_empty_durable_backend_enters_bootstrap_without_committing(tmp_path: Path) -> None:

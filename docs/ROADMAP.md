@@ -534,6 +534,22 @@ cloud-run authorization.
 - Keep Google Sheets read-only, GCS schema v2 unchanged, and the Monday 09:00 Europe/Brussels
   schedule intact.
 
+## Milestone 6.1D — Reporting fixes and permanent research-source activation
+
+Status: complete; Paradromics and RLDM are permanently enabled through the production repository
+variable while CMU Neural Computation remains informational-only.
+
+- Distinguish first ResearchRadar observation (`NEW_TO_RADAR`) from source-evidenced recent
+  publication (`NEWLY_POSTED`) and preserve unknown posting dates without inference.
+- Group PhD records by evidenced admission cycle so the historical Gatsby 2027 record cannot
+  appear as a confirmed Fall 2028 opening.
+- Surface official experience requirements while keeping immediate eligibility and work
+  authorization unknown unless separately verified.
+- Preserve the research-role gate, the original numerical scores and Domain Fit, schema-v2 GCS
+  history, read-only Sheets behavior, and the existing weekly schedule.
+- Enable exactly Paradromics and RLDM in addition to the original six production adapters; keep
+  CMU's programme profile outside the opportunity feed.
+
 ## Later phases
 
 - Reliable salary benchmarking and trends
