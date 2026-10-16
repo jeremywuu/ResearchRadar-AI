@@ -307,7 +307,10 @@ def test_weekly_role_gate_places_clinical_adjacent_and_platform_roles_separately
     assert "Field Clinical Specialist" not in top
     assert "Neural Decoding Engineer" in adjacent_section
     assert "experience_requirement=3+ years of relevant professional experience" in adjacent_section
-    assert "immediate_application_readiness=unknown" in adjacent_section
+    assert "long_term_career_relevance=FUTURE_CAREER_TARGET" in adjacent_section
+    assert "immediate_application_readiness=UNKNOWN" in adjacent_section
+    assert "confirmed_eligibility=UNKNOWN" in adjacent_section
+    assert "work_authorization=UNKNOWN" in adjacent_section
     assert "Embedded Firmware Engineer" in platform_section
     assert "Field Clinical Specialist" in review_section
 

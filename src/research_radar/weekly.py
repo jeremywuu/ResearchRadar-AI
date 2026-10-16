@@ -466,13 +466,15 @@ def _category_facts(opportunity: object) -> str:
         salary = opportunity.original_salary_text or "salary unknown"
         experience = _experience_requirement(opportunity)
         experience_fact = (
-            f"experience_requirement={experience}; immediate_application_readiness=unknown; "
+            f"experience_requirement={experience}; "
             if experience
-            else "experience_requirement=unknown; immediate_application_readiness=unknown; "
+            else "experience_requirement=unknown; "
         )
         return (
             f"education={opportunity.education_requirement.value}; {experience_fact}{salary}; "
-            f"career_stage={opportunity.classification.value}"
+            f"long_term_career_relevance={opportunity.classification.value}; "
+            "immediate_application_readiness=UNKNOWN; confirmed_eligibility=UNKNOWN; "
+            "work_authorization=UNKNOWN"
         )
     if isinstance(opportunity, PhDOpportunity):
         return (
