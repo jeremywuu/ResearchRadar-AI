@@ -50,6 +50,26 @@ A planning label describing when an opportunity may be useful, including future 
 targets; it is not an eligibility decision.
 _Avoid_: Recommendation priority, qualification status
 
+**Career Stage Fit**:
+An evidence-based timing classification for a job: near-term internship/RA, pre-PhD research
+engineering, post-PhD career, transferable technical work, informational team, or unknown. It is
+independent of the job's role function and domain fit.
+_Avoid_: Confirmed eligibility, recommendation score
+
+**Application Readiness**:
+A conservative statement about whether the currently evidenced requirements support near-term
+consideration, require review, describe a future target, or are informational only.
+_Avoid_: Admission likelihood, work authorization, assumed qualification
+
+**Listing Status**:
+Whether a role is on the current official index, has only an accessible detail page, was not
+observed, is explicitly closed, or could not be checked. Missing or failed retrieval is not closure.
+_Avoid_: Source health, recommendation priority
+
+**Research Team Profile**:
+Verified information about an organization's research activity without evidence of a current job.
+_Avoid_: Confirmed opening, talent-pool vacancy
+
 **User Feedback**:
 The user's explicit preference, saved state, hidden state, and notes. It remains authoritative and
 separate from deterministic scoring.

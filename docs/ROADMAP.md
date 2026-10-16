@@ -552,6 +552,22 @@ variable while CMU Neural Computation remains informational-only.
 
 ## Later phases
 
+## Milestone 6.3A — Industry Research Job Discovery & Career Fit
+
+Status: complete on an isolated local branch; production activation is unauthorized.
+
+- Verify first-party careers-to-ATS ownership for Neuralink, Precision Neuroscience, Synchron,
+  Blackrock Neurotech, Paradromics, and Neuroelectrics.
+- Add disabled Neuralink, Precision, and Synchron pilots with bounded retrieval and current-index
+  proof; preserve honest no-match and unavailable outcomes.
+- Derive career-stage fit and application readiness independently from role function, domain fit,
+  scoring, and work-authorization evidence.
+- Treat Meta AI and Google DeepMind neuroscience publications as research-team profiles, never as
+  vacancies.
+- Audit Anthropic's bounded candidate selection offline without changing the live adapter.
+- Preserve the eight-source production registry, weekly workflow, GCS schema v2, and read-only
+  Google Sheets behavior.
+
 - Reliable salary benchmarking and trends
 - Skill-demand and company-hiring trends
 - PhD career intelligence and industry pathways

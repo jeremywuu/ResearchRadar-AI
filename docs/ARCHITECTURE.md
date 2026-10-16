@@ -82,6 +82,13 @@ recommendation decision preserves its base classification and carries a separate
 classification. No role-function field is serialized into canonical opportunity snapshots, so
 schema-v2 durable state remains readable without migration.
 
+`career_stage` is a second pure assessment seam. It consumes an existing `IndustryJob` plus the
+derived role function and returns timing, application-readiness, requirement evidence, and explicit
+unknowns. It does not alter the 45/25/20/10 score, canonical opportunity, or schema-v2 snapshot.
+`job_discovery` owns current-index versus detail-page semantics and an offline, deterministic
+proposal for bounded source coverage. Milestone 6.3A pilot collectors are explicit-injection only;
+they are deliberately absent from the production registry.
+
 ## Preference-bound incremental plans
 
 An incremental plan payload contains proposed sheet operations, source observations,
