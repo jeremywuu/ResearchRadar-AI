@@ -123,6 +123,13 @@ generation may classify responsibility evidence as `RESEARCH_DIRECT`,
 or `UNKNOWN`. The derived result never changes source timestamps or the stored Domain Fit and does
 not require a schema-version change.
 
+Career Stage Fit is likewise derived at runtime from canonical job evidence plus Role Function.
+It may be `NEAR_TERM_INTERNSHIP_OR_RA`, `PRE_PHD_RESEARCH_ENGINEERING`,
+`POST_PHD_RESEARCH_CAREER`, `TRANSFERABLE_TECHNICAL`, `INFORMATIONAL_RESEARCH_TEAM`, or `UNKNOWN`.
+Application readiness, official requirement evidence, and unknown eligibility remain separate
+derived report facts. None is serialized as a required schema-v2 field, so existing snapshots need
+no migration.
+
 ## PhDOpportunity
 
 ```text

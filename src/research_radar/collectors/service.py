@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from research_radar.collectors.base import OfficialSourceAdapter, SourceCollectionResult
+from research_radar.collectors.job_pilot import (
+    NeuralinkCareersPilotAdapter,
+    PrecisionNeuroscienceCareersPilotAdapter,
+)
 from research_radar.collectors.official import (
     AnthropicGreenhouseAdapter,
     Ccn2027EventAdapter,
@@ -40,6 +44,7 @@ class LiveCollectionReport:
 
 
 RESEARCH_SOURCES_ENABLED_ENV = "RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED"
+BCI_SOURCES_ENABLED_ENV = "RESEARCH_RADAR_BCI_SOURCES_ENABLED"
 
 
 def default_adapters(
@@ -57,21 +62,33 @@ def default_adapters(
     ]
     if research_sources_enabled(environment):
         adapters.extend((ParadromicsCareersAdapter(), Rldm2027EventAdapter()))
+    if bci_sources_enabled(environment):
+        adapters.extend(
+            (NeuralinkCareersPilotAdapter(), PrecisionNeuroscienceCareersPilotAdapter())
+        )
     return {adapter.source.source_id: adapter for adapter in adapters}
 
 
 def research_sources_enabled(environment: Mapping[str, str] | None = None) -> bool:
     """Read the fail-closed production research-source feature flag."""
 
+    return _feature_enabled(RESEARCH_SOURCES_ENABLED_ENV, environment)
+
+
+def bci_sources_enabled(environment: Mapping[str, str] | None = None) -> bool:
+    """Read the independent, fail-closed BCI source feature flag."""
+
+    return _feature_enabled(BCI_SOURCES_ENABLED_ENV, environment)
+
+
+def _feature_enabled(name: str, environment: Mapping[str, str] | None) -> bool:
     values = os.environ if environment is None else environment
-    configured = values.get(RESEARCH_SOURCES_ENABLED_ENV, "").strip().casefold()
+    configured = values.get(name, "").strip().casefold()
     if configured in {"", "0", "false", "no", "off"}:
         return False
     if configured in {"1", "true", "yes", "on"}:
         return True
-    raise ValueError(
-        f"{RESEARCH_SOURCES_ENABLED_ENV} must be an explicit boolean value; got {configured!r}"
-    )
+    raise ValueError(f"{name} must be an explicit boolean value; got {configured!r}")
 
 
 def collect_live(

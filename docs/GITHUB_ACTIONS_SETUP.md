@@ -127,6 +127,7 @@ Actions → Variables**. They identify resources but are not credentials:
 | `RESEARCH_RADAR_GCS_BUCKET` | `researchradar-state-310248522001-euw1` |
 | `RESEARCH_RADAR_GCS_PREFIX` | `researchradar/state/v1` |
 | `RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED` | Leave unset or `false` until a separately authorized activation |
+| `RESEARCH_RADAR_BCI_SOURCES_ENABLED` | Keep `false` until a separately authorized BCI cloud acceptance run |
 
 The workflow sets these non-secret safety values itself:
 
@@ -139,6 +140,10 @@ RESEARCH_RADAR_GOOGLE_READ_ONLY=1
 The workflow passes `RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED` from repository variables. A missing
 variable is safely interpreted as false. Setting it to true changes source collection and therefore
 requires a separately authorized cloud acceptance run; it never changes Sheets read-only mode.
+
+The workflow separately passes `RESEARCH_RADAR_BCI_SOURCES_ENABLED`. Missing, empty, or false keeps
+the eight-source production registry unchanged; true adds only Neuralink and Precision. Invalid
+values fail closed. Synchron and informational PhD profiles remain outside the opportunity feed.
 
 Do not add OAuth refresh tokens, ADC files, or service-account JSON as GitHub secrets.
 

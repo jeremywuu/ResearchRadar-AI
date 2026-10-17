@@ -13,7 +13,9 @@ from research_radar.collectors.pilot import (
     milestone_6_pilot_adapters,
 )
 from research_radar.collectors.service import (
+    BCI_SOURCES_ENABLED_ENV,
     RESEARCH_SOURCES_ENABLED_ENV,
+    bci_sources_enabled,
     default_adapters,
     research_sources_enabled,
 )
@@ -104,6 +106,34 @@ def test_research_source_flag_adds_only_approved_opportunity_feeds() -> None:
     assert "cmu_neural_computation_profile" not in adapters
 
 
+def test_bci_source_flag_adds_only_neuralink_and_precision_to_eight_sources() -> None:
+    adapters = default_adapters(
+        environment={
+            RESEARCH_SOURCES_ENABLED_ENV: "true",
+            BCI_SOURCES_ENABLED_ENV: "true",
+        }
+    )
+
+    assert len(adapters) == 10
+    assert "neuralink_careers_discovery" in adapters
+    assert "precision_neuroscience_careers_discovery" in adapters
+    assert "synchron_careers_discovery" not in adapters
+    assert "cmu_neural_computation_profile" not in adapters
+
+
+def test_bci_source_flag_false_preserves_eight_source_production_registry() -> None:
+    adapters = default_adapters(
+        environment={
+            RESEARCH_SOURCES_ENABLED_ENV: "true",
+            BCI_SOURCES_ENABLED_ENV: "false",
+        }
+    )
+
+    assert len(adapters) == 8
+    assert "neuralink_careers_discovery" not in adapters
+    assert "precision_neuroscience_careers_discovery" not in adapters
+
+
 @pytest.mark.parametrize("configured", ("", "0", "false", "no", "off", "FALSE"))
 def test_research_source_flag_false_values_preserve_six_sources(configured: str) -> None:
     assert research_sources_enabled({RESEARCH_SOURCES_ENABLED_ENV: configured}) is False
@@ -119,6 +149,13 @@ def test_research_source_flag_true_values_enable_two_sources(configured: str) ->
 def test_research_source_flag_rejects_ambiguous_values() -> None:
     with pytest.raises(ValueError, match=RESEARCH_SOURCES_ENABLED_ENV):
         default_adapters(environment={RESEARCH_SOURCES_ENABLED_ENV: "enabled"})
+
+
+def test_bci_source_flag_rejects_ambiguous_values() -> None:
+    with pytest.raises(ValueError, match=BCI_SOURCES_ENABLED_ENV):
+        default_adapters(environment={BCI_SOURCES_ENABLED_ENV: "enabled"})
+
+    assert bci_sources_enabled({}) is False
 
 
 def test_cmu_neural_computation_is_profile_not_open_fall_2028_opportunity() -> None:

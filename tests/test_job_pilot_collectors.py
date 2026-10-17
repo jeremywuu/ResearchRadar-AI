@@ -10,7 +10,7 @@ from research_radar.collectors.job_pilot import (
     SynchronCareersPilotAdapter,
     milestone_6_3a_pilot_adapters,
 )
-from research_radar.collectors.service import default_adapters
+from research_radar.collectors.service import BCI_SOURCES_ENABLED_ENV, default_adapters
 from research_radar.models import SourceHealth
 from research_radar.pipelines import run_jobs_pipeline
 from research_radar.role_function import RoleFunction, assess_role_function
@@ -47,6 +47,14 @@ def test_job_pilots_are_not_registered_in_production() -> None:
     assert pilot_ids.isdisjoint(production_ids)
 
 
+def test_bci_flag_registers_only_approved_job_feeds() -> None:
+    adapters = default_adapters(environment={BCI_SOURCES_ENABLED_ENV: "true"})
+
+    assert "neuralink_careers_discovery" in adapters
+    assert "precision_neuroscience_careers_discovery" in adapters
+    assert "synchron_careers_discovery" not in adapters
+
+
 def test_neuralink_requires_official_board_ownership_and_extracts_bounded_role() -> None:
     careers = "https://neuralink.com/careers/"
     listing = NeuralinkCareersPilotAdapter.source.retrieval_url
@@ -62,6 +70,11 @@ def test_neuralink_requires_official_board_ownership_and_extracts_bounded_role()
             "<p>Prior machine learning model-building experience. "
             "Work authorization and sponsorship questions apply.</p>"
         ),
+        "questions": [
+            {"label": "What year do you expect to graduate?"},
+            {"label": "Are you legally authorized to work in the United States?"},
+            {"label": "Will you require sponsorship in the future?"},
+        ],
     }
     routes = {
         "https://neuralink.com/robots.txt": _response(
@@ -99,6 +112,11 @@ def test_neuralink_requires_official_board_ownership_and_extracts_bounded_role()
     assert result.records[0]["official_job_id"] == "6594261003"
     assert result.records[0]["listing_status"] == "CONFIRMED_LISTED"
     assert result.records[0]["education_requirement_detail"] is None
+    assert result.records[0]["application_requirement_evidence"] == [
+        "What year do you expect to graduate?",
+        "Are you legally authorized to work in the United States?",
+        "Will you require sponsorship in the future?",
+    ]
 
 
 def test_neuralink_stable_id_uses_greenhouse_id() -> None:

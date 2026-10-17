@@ -115,6 +115,7 @@ class NeuralinkCareersPilotAdapter:
             raise ValueError("Neuralink detail has an invalid canonical URL")
         text = _structured_text(str(detail.get("content") or ""))
         location = _greenhouse_location(detail)
+        application_requirements = _greenhouse_application_requirements(detail)
         return _raw_job(
             title=title,
             organization="Neuralink",
@@ -126,6 +127,7 @@ class NeuralinkCareersPilotAdapter:
             description=text,
             evidence=[f"Current Greenhouse index job ID: {job_id}", f"Title: {title}"],
             extraction_method="official_careers_plus_greenhouse_api",
+            application_requirements=application_requirements,
         )
 
 
@@ -324,6 +326,7 @@ def _raw_job(
     description: str,
     evidence: list[str],
     extraction_method: str,
+    application_requirements: list[str] | None = None,
 ) -> dict[str, Any]:
     education = _requirement(
         description,
@@ -387,6 +390,7 @@ def _raw_job(
         "education_requirement_detail": education,
         "experience_requirement_detail": experience,
         "work_authorization_detail": work_authorization,
+        "application_requirement_evidence": application_requirements or [],
         "workplace_evidence": _workplace_evidence(description),
         "role_evidence": responsibilities,
         "research_responsibility_evidence": responsibilities,
@@ -417,6 +421,21 @@ def _greenhouse_location(detail: dict[str, Any]) -> str | None:
     if isinstance(location, dict) and location.get("name"):
         return str(location["name"])
     return None
+
+
+def _greenhouse_application_requirements(detail: dict[str, Any]) -> list[str]:
+    questions = detail.get("questions")
+    if not isinstance(questions, list):
+        return []
+    markers = ("graduat", "student", "authorized to work", "sponsorship", "on-site", "onsite")
+    evidence = []
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        label = _structured_text(str(question.get("label") or ""))
+        if label and any(marker in label.casefold() for marker in markers):
+            evidence.append(label)
+    return list(dict.fromkeys(evidence))
 
 
 def _neuralink_careers_module(html: str) -> str:

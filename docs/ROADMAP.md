@@ -583,6 +583,20 @@ Status: complete on the isolated Job Radar branch; production activation is unau
 - Leave all three pilots outside `default_adapters()` until a separately authorized production
   deployment and cloud acceptance run.
 
+## Milestone 6.3C-A — Controlled Job Radar production deployment
+
+Status: deployment preparation implemented; BCI sources remain disabled pending a separately
+authorized cloud acceptance run.
+
+- Add an independent, fail-closed `RESEARCH_RADAR_BCI_SOURCES_ENABLED` gate that adds only
+  Neuralink and Precision to the established eight-source registry.
+- Keep Synchron informational-only, preserve schema-v2 durable state, and derive Career Stage Fit
+  at report time without changing canonical opportunity records or numerical scoring.
+- Surface official experience, application-screening, location, and work-authorization evidence
+  without inferring user eligibility or sponsorship.
+- Preserve the weekly schedule, read-only Sheets mode, GCS generation CAS, and all existing source
+  adapters while the repository variable remains explicitly false.
+
 - Reliable salary benchmarking and trends
 - Skill-demand and company-hiring trends
 - PhD career intelligence and industry pathways

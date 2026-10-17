@@ -9,6 +9,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from research_radar.career_stage import CareerStageFit, assess_career_stage
 from research_radar.collectors.base import OfficialSourceAdapter, SourceCollectionResult
 from research_radar.collectors.service import collect_live
 from research_radar.fresh_observation import (
@@ -22,7 +23,7 @@ from research_radar.live_integration import (
     prepare_incremental_live_sync,
 )
 from research_radar.models import AcademicEvent, IndustryJob, PhDOpportunity, SourceHealth
-from research_radar.role_function import RoleDisplayGroup
+from research_radar.role_function import RoleDisplayGroup, assess_role_function
 from research_radar.storage.durable_state import (
     DurableStateBackend,
     DurableStateError,
@@ -289,6 +290,14 @@ def _write_weekly_report(
     for title, label, deadline, url in deadlines:
         lines.append(f"  - [{title}]({url}) — {label}: `{deadline.isoformat()}`")
 
+    _append_jobs_by_career_stage(
+        lines,
+        "A2. Near-term Research Internships",
+        plan,
+        {CareerStageFit.NEAR_TERM_INTERNSHIP_OR_RA},
+        analysis=analysis,
+        reference_date=observed_at.date(),
+    )
     _append_jobs_by_group(
         lines,
         "B. Top Research Matches",
@@ -305,8 +314,17 @@ def _write_weekly_report(
         {RoleDisplayGroup.RESEARCH_ADJACENT},
         analysis=analysis,
         reference_date=observed_at.date(),
+        excluded_career_stages={CareerStageFit.NEAR_TERM_INTERNSHIP_OR_RA},
     )
     _append_category(lines, "H. Conferences and Deadlines", plan, "events")
+    _append_jobs_by_career_stage(
+        lines,
+        "H2. Long-Term Research Career Pathways",
+        plan,
+        {CareerStageFit.POST_PHD_RESEARCH_CAREER},
+        analysis=analysis,
+        reference_date=observed_at.date(),
+    )
     _append_jobs_by_group(
         lines,
         "I. Transferable Technical Roles",
@@ -423,6 +441,7 @@ def _append_jobs_by_group(
     *,
     analysis: FreshObservationAnalysis | None,
     reference_date: date,
+    excluded_career_stages: set[CareerStageFit] | None = None,
 ) -> None:
     lines.extend([f"## {heading}", ""])
     decisions = plan.preview.recommendations.by_record_id
@@ -431,11 +450,16 @@ def _append_jobs_by_group(
         key=lambda item: item.score.final_score,
         reverse=True,
     )
-    matching = [
-        item
-        for item in records
-        if decisions[item.opportunity.opportunity_id].display_group in groups
-    ]
+    matching = []
+    for item in records:
+        decision = decisions[item.opportunity.opportunity_id]
+        if decision.display_group not in groups:
+            continue
+        role = decision.role_function or assess_role_function(item.opportunity).classification
+        career_stage = assess_career_stage(item.opportunity, role).classification
+        if excluded_career_stages and career_stage in excluded_career_stages:
+            continue
+        matching.append(item)
     if not matching:
         lines.extend(["No verified roles in this section.", ""])
         return
@@ -461,20 +485,74 @@ def _append_jobs_by_group(
     lines.append("")
 
 
+def _append_jobs_by_career_stage(
+    lines: list[str],
+    heading: str,
+    plan: IncrementalLiveSyncPlan,
+    stages: set[CareerStageFit],
+    *,
+    analysis: FreshObservationAnalysis | None,
+    reference_date: date,
+) -> None:
+    lines.extend([f"## {heading}", ""])
+    decisions = plan.preview.recommendations.by_record_id
+    matching = []
+    for processed in plan.preview.execution.pipelines["jobs"].records:
+        opportunity = processed.opportunity
+        decision = decisions[opportunity.opportunity_id]
+        role = decision.role_function or assess_role_function(opportunity).classification
+        if assess_career_stage(opportunity, role).classification in stages:
+            matching.append(processed)
+    matching.sort(key=lambda item: item.score.final_score, reverse=True)
+    if not matching:
+        lines.extend(["No verified roles in this section.", ""])
+        return
+    for processed in matching:
+        opportunity = processed.opportunity
+        decision = decisions[opportunity.opportunity_id]
+        role_function = decision.role_function.value if decision.role_function else "UNKNOWN"
+        observation_facts = _job_observation_facts(
+            opportunity,
+            analysis=analysis,
+            reference_date=reference_date,
+        )
+        lines.append(
+            f"- `{opportunity.opportunity_id}` "
+            f"[{opportunity.title}]({_official_url(opportunity)}) — {opportunity.organization}; "
+            f"role_function={role_function}; "
+            f"effective_recommendation={decision.effective_classification.value}; "
+            f"domain_fit={decision.domain_fit.value}; score={processed.score.final_score:.1f}; "
+            f"{observation_facts}; {_category_facts(opportunity)}"
+        )
+    lines.append("")
+
+
 def _category_facts(opportunity: object) -> str:
     if isinstance(opportunity, IndustryJob):
         salary = opportunity.original_salary_text or "salary unknown"
         experience = _experience_requirement(opportunity)
+        role = assess_role_function(opportunity)
+        career = assess_career_stage(opportunity, role.classification)
+        education = _education_requirement(opportunity)
+        authorization = career.work_authorization_evidence or "UNKNOWN"
+        eligibility = (
+            str(career.confirmed_eligibility).upper()
+            if career.confirmed_eligibility is not None
+            else "UNKNOWN"
+        )
+        application_requirements = _application_requirements(opportunity)
         experience_fact = (
             f"experience_requirement={experience}; "
             if experience
             else "experience_requirement=unknown; "
         )
         return (
-            f"education={opportunity.education_requirement.value}; {experience_fact}{salary}; "
-            f"long_term_career_relevance={opportunity.classification.value}; "
-            "immediate_application_readiness=UNKNOWN; confirmed_eligibility=UNKNOWN; "
-            "work_authorization=UNKNOWN"
+            f"education={education}; {experience_fact}{salary}; "
+            f"career_stage={career.classification.value}; "
+            f"long_term_career_relevance={career.long_term_career_relevance}; "
+            f"immediate_application_readiness={career.application_readiness.value}; "
+            f"confirmed_eligibility={eligibility}; work_authorization={authorization}; "
+            f"application_requirements={application_requirements}"
         )
     if isinstance(opportunity, PhDOpportunity):
         return (
@@ -628,6 +706,21 @@ def _experience_requirement(opportunity: IndustryJob) -> str | None:
     if isinstance(value, str) and value.strip():
         return " ".join(value.split())
     return None
+
+
+def _education_requirement(opportunity: IndustryJob) -> str:
+    value = opportunity.original_values.get("education_requirement_detail")
+    if isinstance(value, str) and value.strip():
+        return " ".join(value.split())
+    return opportunity.education_requirement.value
+
+
+def _application_requirements(opportunity: IndustryJob) -> str:
+    value = opportunity.original_values.get("application_requirement_evidence")
+    if not isinstance(value, list):
+        return "UNKNOWN"
+    rendered = [" ".join(str(item).split()) for item in value if str(item).strip()]
+    return " | ".join(rendered) if rendered else "UNKNOWN"
 
 
 def _append_career_intelligence(lines: list[str], plan: IncrementalLiveSyncPlan) -> None:

@@ -86,8 +86,10 @@ schema-v2 durable state remains readable without migration.
 derived role function and returns timing, application-readiness, requirement evidence, and explicit
 unknowns. It does not alter the 45/25/20/10 score, canonical opportunity, or schema-v2 snapshot.
 `job_discovery` owns current-index versus detail-page semantics and an offline, deterministic
-proposal for bounded source coverage. Milestone 6.3A pilot collectors are explicit-injection only;
-they are deliberately absent from the production registry.
+proposal for bounded source coverage. The reviewed Neuralink and Precision collectors enter the
+production registry only when the independent, fail-closed
+`RESEARCH_RADAR_BCI_SOURCES_ENABLED` flag is true. Synchron remains informational-only and outside
+the opportunity feed.
 
 ## Preference-bound incremental plans
 
@@ -318,6 +320,11 @@ true adds only Paradromics and RLDM. CMU Neural Computation remains outside the 
 registry. Programme, lab, and faculty profiles continue to use
 `SourceCollectionResult.informational_profiles`, while only cycle-specific, actionable evidence
 enters an opportunity pipeline.
+
+The independent `RESEARCH_RADAR_BCI_SOURCES_ENABLED` seam is also absent/false by default. With
+the research-source flag true and the BCI flag false, the registry contains the established eight
+sources. Enabling both adds only Neuralink and Precision for a total of ten; it never adds Synchron
+or the CMU informational profile. Invalid flag values fail closed before collection.
 
 The `source-preview` command is a one-way production-preview seam. Its durable-state dependency
 exposes only `restore`, it has no `--apply` option, and it passes the reviewed pilot snapshot

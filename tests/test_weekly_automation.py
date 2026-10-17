@@ -267,6 +267,21 @@ def test_weekly_role_gate_places_clinical_adjacent_and_platform_roles_separately
                 "Develop decoding algorithms and evaluate neural data software."
             ],
             "experience_requirement_detail": "3+ years of relevant professional experience",
+            "work_authorization_detail": "Must be legally authorized to work in the US.",
+            "application_requirement_evidence": ["Will you require sponsorship in the future?"],
+        }
+    )
+    internship = dict(_job_raw())
+    internship.update(
+        {
+            "official_job_id": "INTERN-1",
+            "source_url": "https://official.example/jobs/INTERN-1",
+            "title": "Neural Decoding Engineer Intern",
+            "role_evidence": ["Develop neural decoding algorithms and analyze neural data."],
+            "research_responsibility_evidence": [
+                "Develop neural decoding algorithms and analyze neural data."
+            ],
+            "application_requirement_evidence": ["What year do you expect to graduate?"],
         }
     )
     platform = dict(_job_raw())
@@ -283,7 +298,10 @@ def test_weekly_role_gate_places_clinical_adjacent_and_platform_roles_separately
     )
     adapters = _adapters()
     adapters["official_jobs"] = StaticAdapter(
-        "official_jobs", "jobs", SourceHealth.SUCCESS, [direct, clinical, adjacent, platform]
+        "official_jobs",
+        "jobs",
+        SourceHealth.SUCCESS,
+        [direct, clinical, adjacent, platform, internship],
     )
 
     result = run_weekly_monitor(
@@ -297,6 +315,9 @@ def test_weekly_role_gate_places_clinical_adjacent_and_platform_roles_separately
     )
     report = result.report_path.read_text(encoding="utf-8")
 
+    internship_section = report.split("## A2. Near-term Research Internships", 1)[1].split(
+        "## B.", 1
+    )[0]
     top = report.split("## B. Top Research Matches", 1)[1].split("## C.", 1)[0]
     adjacent_section = report.split("## G. NeuroAI / BCI Research-Adjacent Roles", 1)[1].split(
         "## H.", 1
@@ -304,13 +325,17 @@ def test_weekly_role_gate_places_clinical_adjacent_and_platform_roles_separately
     platform_section = report.split("## I. Transferable Technical Roles", 1)[1].split("## J.", 1)[0]
     review_section = report.split("## J. Needs Review", 1)[1].split("## K.", 1)[0]
     assert "Research Scientist, Human Behavior" in top
+    assert "Neural Decoding Engineer Intern" in internship_section
+    assert "career_stage=NEAR_TERM_INTERNSHIP_OR_RA" in internship_section
+    assert "What year do you expect to graduate?" in internship_section
     assert "Field Clinical Specialist" not in top
     assert "Neural Decoding Engineer" in adjacent_section
     assert "experience_requirement=3+ years of relevant professional experience" in adjacent_section
-    assert "long_term_career_relevance=FUTURE_CAREER_TARGET" in adjacent_section
-    assert "immediate_application_readiness=UNKNOWN" in adjacent_section
+    assert "long_term_career_relevance=HIGH" in adjacent_section
+    assert "immediate_application_readiness=REQUIREMENTS_NEED_REVIEW" in adjacent_section
     assert "confirmed_eligibility=UNKNOWN" in adjacent_section
-    assert "work_authorization=UNKNOWN" in adjacent_section
+    assert "work_authorization=Must be legally authorized to work in the US." in adjacent_section
+    assert "Will you require sponsorship in the future?" in adjacent_section
     assert "Embedded Firmware Engineer" in platform_section
     assert "Field Clinical Specialist" in review_section
 
@@ -599,6 +624,9 @@ def test_weekly_workflow_has_approved_schedule_and_remains_read_only() -> None:
     assert monitor["env"]["RESEARCH_RADAR_GOOGLE_READ_ONLY"] == "1"
     assert monitor["env"]["RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED"] == (
         "${{ vars.RESEARCH_RADAR_RESEARCH_SOURCES_ENABLED }}"
+    )
+    assert monitor["env"]["RESEARCH_RADAR_BCI_SOURCES_ENABLED"] == (
+        "${{ vars.RESEARCH_RADAR_BCI_SOURCES_ENABLED }}"
     )
     assert monitor["env"]["RESEARCH_RADAR_GCS_BUCKET"] == ("${{ vars.RESEARCH_RADAR_GCS_BUCKET }}")
     assert monitor["env"]["RESEARCH_RADAR_GCS_PREFIX"] == ("${{ vars.RESEARCH_RADAR_GCS_PREFIX }}")
