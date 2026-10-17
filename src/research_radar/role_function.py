@@ -35,7 +35,6 @@ class RoleFunctionAssessment:
 
 _CLINICAL_MARKERS = (
     "clinical site",
-    "clinical trial",
     "clinical study",
     "support clinical",
     "field support",
@@ -63,6 +62,7 @@ _NEURAL_COMPUTATIONAL_MARKERS = (
     "neural data",
     "neural signal",
     "neural decoding",
+    "neural decoder",
     "bci decoding",
     "decoding algorithm",
     "signal processing",

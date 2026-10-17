@@ -57,7 +57,8 @@ def test_neuralink_requires_official_board_ownership_and_extracts_bounded_role()
         "absolute_url": "https://job-boards.greenhouse.io/neuralink/jobs/6594261003",
         "location": {"name": "South San Francisco, California"},
         "content": (
-            "<p>Develop neural decoders and analyze complex neural data.</p>"
+            "<p>Develop neural decoders controlled with their minds at 15ms latency and "
+            "analyze complex neural data.</p>"
             "<p>Prior machine learning model-building experience. "
             "Work authorization and sponsorship questions apply.</p>"
         ),
@@ -75,8 +76,12 @@ def test_neuralink_requires_official_board_ownership_and_extracts_bounded_role()
             json.dumps(
                 {
                     "jobs": [
-                        {"id": 6594261003, "title": detail["title"]},
-                        {"id": 1, "title": "Account Executive"},
+                        {
+                            "id": 6594261003,
+                            "title": detail["title"],
+                            "company_name": "Neuralink",
+                        },
+                        {"id": 1, "title": "Account Executive", "company_name": "Neuralink"},
                     ]
                 }
             ),
@@ -93,6 +98,7 @@ def test_neuralink_requires_official_board_ownership_and_extracts_bounded_role()
     assert result.records_considered == 1
     assert result.records[0]["official_job_id"] == "6594261003"
     assert result.records[0]["listing_status"] == "CONFIRMED_LISTED"
+    assert result.records[0]["education_requirement_detail"] is None
 
 
 def test_neuralink_stable_id_uses_greenhouse_id() -> None:
@@ -125,6 +131,35 @@ def test_neuralink_stable_id_uses_greenhouse_id() -> None:
     )
 
 
+def test_neuralink_accepts_only_same_origin_module_with_exact_board_endpoint() -> None:
+    careers = "https://neuralink.com/careers/"
+    module = "https://neuralink.com/assets/entries/pages_careers_index.page.abc123.js"
+    listing = NeuralinkCareersPilotAdapter.source.retrieval_url
+    routes = {
+        "https://neuralink.com/robots.txt": _response(
+            "https://neuralink.com/robots.txt", "User-agent: *\nAllow: /\n"
+        ),
+        careers: _response(careers, f'<link rel="modulepreload" href="{module}">'),
+        module: _response(
+            module,
+            'fetch("https://boards-api.greenhouse.io/v1/boards/neuralink/jobs")',
+        ),
+        listing: _response(
+            listing,
+            json.dumps(
+                {"jobs": [{"id": 1, "title": "Account Executive", "company_name": "Neuralink"}]}
+            ),
+        ),
+    }
+
+    result = NeuralinkCareersPilotAdapter(HttpClient(transport=RouteTransport(routes))).collect(
+        observed_at=NOW
+    )
+
+    assert result.health is SourceHealth.SUCCESS_NO_MATCHES
+    assert result.errors == []
+
+
 def test_precision_extracts_dsp_role_and_keeps_readiness_unconfirmed() -> None:
     careers = "https://www.precisionneuro.io/careers"
     index = "https://careers.kula.ai/precision-neuroscience"
@@ -138,14 +173,22 @@ def test_precision_extracts_dsp_role_and_keeps_readiness_unconfirmed() -> None:
         ),
         careers: _response(
             careers,
-            '<a href="https://careers.kula.ai/precision-neuroscience">Open positions</a>',
+            '<title>Careers | Precision</title><link rel="canonical" '
+            'href="https://www.precisionneuro.io/careers">',
         ),
-        index: _response(index, f'<a href="{detail}">DSP Algorithm Engineer</a>'),
+        index: _response(
+            index,
+            "<title>Precision Neuroscience Careers | Open Jobs</title>"
+            '<script type="application/ld+json">'
+            '{"name":"Precision Neuroscience","url":"https://precisionneuro.io/careers"}'
+            f'</script><a href="{detail}">DSP Algorithm Engineer</a>',
+        ),
         detail: _response(
             detail,
             "<h1>DSP Algorithm Engineer</h1><p>Improve the BCI signal acquisition chain, "
             "develop signal processing algorithms and machine learning feature extraction. "
-            "Candidates must be legally authorized to work in the US.</p>",
+            "Candidates must be currently US-based and legally authorized to work in the US."
+            "</p><p>USD 155,000-185,000 / year. Full time, on-site.</p>",
         ),
     }
 
@@ -166,10 +209,14 @@ def test_precision_extracts_dsp_role_and_keeps_readiness_unconfirmed() -> None:
 
     assert result.health is SourceHealth.SUCCESS
     assert job.official_job_id == "39009"
+    assert job.title == "DSP Algorithm Engineer"
     assert role.classification is RoleFunction.RESEARCH_ADJACENT_ENGINEERING
     assert stage.classification is CareerStageFit.PRE_PHD_RESEARCH_ENGINEERING
     assert stage.confirmed_eligibility is None
-    assert stage.work_authorization_evidence is not None
+    assert stage.work_authorization_evidence == (
+        "Candidates must be currently US-based and legally authorized to work in the US."
+    )
+    assert job.original_salary_text == "USD 155,000-185,000 / year"
 
 
 def test_synchron_cognition_team_is_profile_with_no_current_job() -> None:

@@ -568,6 +568,21 @@ Status: complete on an isolated local branch; production activation is unauthori
 - Preserve the eight-source production registry, weekly workflow, GCS schema v2, and read-only
   Google Sheets behavior.
 
+## Milestone 6.3B — BCI Job Radar production-style preview
+
+Status: complete on the isolated Job Radar branch; production activation is unauthorized.
+
+- Revalidate Neuralink and Precision through their current first-party-linked ATS indexes and
+  retain Synchron as an honest no-match informational/index-health source.
+- Preserve current-index membership separately from detail-page accessibility and never infer a
+  posting date from ATS modification metadata.
+- Compare nine canonical pilot jobs with the verified 57-record historical baseline without a GCS
+  commit or Google Sheets write.
+- Keep domain fit, role function, career stage, application readiness, and official eligibility
+  constraints independent in the Job Radar preview.
+- Leave all three pilots outside `default_adapters()` until a separately authorized production
+  deployment and cloud acceptance run.
+
 - Reliable salary benchmarking and trends
 - Skill-demand and company-hiring trends
 - PhD career intelligence and industry pathways

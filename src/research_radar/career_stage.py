@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -178,7 +179,13 @@ def _post_phd_evidence(
     education: str | None,
     experience: str | None,
 ) -> bool:
-    if education and "phd" in education.casefold():
+    if education and re.search(
+        r"^\s*(?:ph\.?d\.?|doctorate|doctoral degree)\b|"
+        r"(?:ph\.?d\.?|doctorate|doctoral degree)\s+(?:is\s+)?required|"
+        r"requires?[^.]{0,40}(?:ph\.?d\.?|doctorate|doctoral degree)",
+        education,
+        re.I,
+    ):
         return True
     combined = " ".join(value for value in (evidence, experience) if value)
     return any(

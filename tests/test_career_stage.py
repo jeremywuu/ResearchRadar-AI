@@ -145,6 +145,20 @@ def test_missing_work_authorization_stays_unknown() -> None:
     assert "work authorization" in assessment.unknown_information
 
 
+def test_multiple_degree_options_do_not_become_post_phd_only() -> None:
+    assessment = assess_career_stage(
+        _job(
+            "Signal Processing Engineer",
+            education="BS, MS, or PhD in electrical engineering",
+            evidence="Develop neural signal-processing algorithms.",
+        ),
+        RoleFunction.RESEARCH_ADJACENT_ENGINEERING,
+    )
+
+    assert assessment.classification is CareerStageFit.PRE_PHD_RESEARCH_ENGINEERING
+    assert assessment.confirmed_eligibility is None
+
+
 def test_research_team_profile_is_not_a_job_opening() -> None:
     assessment = informational_research_team_assessment()
 
